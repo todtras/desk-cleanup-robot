@@ -1,0 +1,8 @@
+dev/.venv/
+dev/outputs/
+**/__pycache__/
+*.pyc
+wandb/
+*.cache/
+.DS_Store
+dev/*.lnk

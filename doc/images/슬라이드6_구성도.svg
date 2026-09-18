@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2160" height="1200" viewBox="0 0 2160 1200">
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,6 L0,12 z" fill="#9CA3AF"/>
+    </marker>
+    <style>
+      text { font-family: Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", Arial, sans-serif; fill:#000000; }
+      .container { fill:none; stroke:#D1D5DB; stroke-width:1; rx:12; }
+      .box { fill:#F2F2F2; stroke:#D1D5DB; stroke-width:1; rx:4; }
+      .container-title { font-size:26px; font-weight:700; }
+      .caption { font-size:20px; font-weight:400; fill:#6B7280; }
+      .label { font-size:30px; font-weight:700; }
+      .sub { font-size:20px; font-weight:400; fill:#6B7280; }
+      .arrow { fill:none; stroke:#9CA3AF; stroke-width:2; marker-end:url(#arrow); }
+      .dash { stroke-dasharray:8 7; }
+    </style>
+  </defs>
+  <rect width="2160" height="1200" fill="#FFFFFF"/>
+
+  <!-- TOP BAND: THREE ALIGNED CONTAINERS -->
+  <rect x="60" y="70" width="400" height="620" class="container"/>
+  <text x="90" y="115" class="container-title">입력</text>
+  <rect x="100" y="235" width="320" height="130" class="box"/>
+  <text x="260" y="290" text-anchor="middle" class="label">상단 고정 카메라</text>
+  <text x="260" y="325" text-anchor="middle" class="sub">Eye-to-hand</text>
+  <rect x="100" y="395" width="320" height="130" class="box"/>
+  <text x="260" y="450" text-anchor="middle" class="label">팔 장착 카메라</text>
+  <text x="260" y="485" text-anchor="middle" class="sub">Eye-in-hand</text>
+
+  <rect x="520" y="70" width="1040" height="620" class="container"/>
+  <text x="550" y="115" class="container-title">PC · 인식 · 판단</text>
+  <rect x="570" y="220" width="300" height="130" class="box"/>
+  <text x="720" y="275" text-anchor="middle" class="label">객체 탐지 · 분류</text>
+  <text x="720" y="310" text-anchor="middle" class="sub">Ultralytics YOLO · VLM</text>
+  <rect x="890" y="220" width="300" height="130" class="box"/>
+  <text x="1040" y="275" text-anchor="middle" class="label">좌표 변환</text>
+  <text x="1040" y="310" text-anchor="middle" class="sub">카메라 → 로봇 좌표</text>
+  <rect x="1210" y="220" width="300" height="130" class="box"/>
+  <text x="1360" y="295" text-anchor="middle" class="label">파지 계획</text>
+  <rect x="870" y="455" width="340" height="130" class="box"/>
+  <text x="1040" y="510" text-anchor="middle" class="label">실패 판정 · 보정</text>
+  <text x="1040" y="545" text-anchor="middle" class="sub">시연 학습 + RL 보정</text>
+
+  <rect x="1620" y="70" width="480" height="620" class="container"/>
+  <text x="1650" y="115" class="container-title">출력</text>
+  <rect x="1680" y="165" width="360" height="130" class="box"/>
+  <text x="1860" y="220" text-anchor="middle" class="label">SO-101 제어</text>
+  <text x="1860" y="255" text-anchor="middle" class="sub">관절 목표값 6축 · 30Hz</text>
+  <rect x="1680" y="350" width="360" height="130" class="box"/>
+  <text x="1860" y="425" text-anchor="middle" class="label">로봇팔 · 그리퍼</text>
+  <rect x="1680" y="535" width="360" height="130" class="box"/>
+  <text x="1860" y="610" text-anchor="middle" class="label">카테고리별 수거함</text>
+
+  <!-- TOP BAND ARROWS -->
+  <path d="M420 300 H570" class="arrow"/>
+  <path d="M420 460 C520 460 650 520 870 520" class="arrow"/>
+  <path d="M870 285 H890" class="arrow"/>
+  <path d="M1190 285 H1210" class="arrow"/>
+  <path d="M1510 285 C1580 285 1615 230 1680 230" class="arrow"/>
+  <path d="M1860 295 V350" class="arrow"/>
+  <path d="M1860 480 V535" class="arrow"/>
+  <path d="M1040 455 C1040 405 1120 400 1240 400 C1320 400 1360 370 1360 350" class="arrow"/>
+  <text x="1160" y="390" class="caption">재시도</text>
+
+  <!-- OFFLINE TRAINING BAND -->
+  <rect x="60" y="800" width="2040" height="330" class="container"/>
+  <text x="90" y="845" class="container-title">오프라인 학습</text>
+  <text x="90" y="875" class="caption">수집 → 학습 → 체크포인트 배포</text>
+
+  <rect x="120" y="945" width="300" height="130" class="box"/>
+  <text x="270" y="1000" text-anchor="middle" class="label">데이터 수집</text>
+  <text x="270" y="1035" text-anchor="middle" class="sub">촬영 · 텔레오퍼레이션</text>
+  <rect x="505" y="945" width="300" height="130" class="box"/>
+  <text x="655" y="1000" text-anchor="middle" class="label">라벨링</text>
+  <text x="655" y="1035" text-anchor="middle" class="sub">Roboflow / Ultralytics</text>
+  <rect x="890" y="945" width="340" height="130" class="box"/>
+  <text x="1060" y="1000" text-anchor="middle" class="label">데이터셋</text>
+  <text x="1060" y="1035" text-anchor="middle" class="sub">이미지 1,000장 · 시연 100 에피소드</text>
+  <rect x="1315" y="945" width="300" height="130" class="box"/>
+  <text x="1465" y="1000" text-anchor="middle" class="label">학습</text>
+  <text x="1465" y="1035" text-anchor="middle" class="sub">GPU A4000 1장</text>
+  <rect x="1700" y="945" width="340" height="130" class="box"/>
+  <text x="1870" y="1020" text-anchor="middle" class="label">모델 체크포인트</text>
+
+  <!-- BOTTOM CHAIN -->
+  <path d="M420 1010 H505" class="arrow"/>
+  <path d="M805 1010 H890" class="arrow"/>
+  <path d="M1230 1010 H1315" class="arrow"/>
+  <path d="M1615 1010 H1700" class="arrow"/>
+
+  <!-- SHORT VERTICAL DASHED DEPLOYMENT ARROWS -->
+  <path d="M1040 745 H720 V350" class="arrow dash"/>
+  <path d="M1870 945 V745 H1040 V585" class="arrow dash"/>
+</svg>

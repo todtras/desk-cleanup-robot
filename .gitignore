@@ -8,3 +8,7 @@ wandb/
 dev/*.lnk
 *.mp4
 dev/datasets/**/images/
+*.yolov11/
+dev/runs/
+*.pt
+dev/results.csv

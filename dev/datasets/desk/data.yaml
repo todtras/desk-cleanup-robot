@@ -1,0 +1,12 @@
+# 수거함 매핑은 코드에서 처리 (펜/지우개→필기구, 스테이플러/테이프→사무용품, 물병/종이/비닐→쓰레기)
+path: .
+train: images/train
+val: images/val
+names:
+  0: bottle
+  1: eraser
+  2: paper
+  3: pen
+  4: stapler
+  5: tape
+  6: vinyl

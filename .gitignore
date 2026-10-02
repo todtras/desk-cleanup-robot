@@ -6,3 +6,5 @@ wandb/
 *.cache/
 .DS_Store
 dev/*.lnk
+*.mp4
+dev/datasets/**/images/

@@ -1,0 +1,25 @@
+# ASCII only: lerobot may read this file as cp949 on Korean Windows, Korean text breaks it.
+# Demo: pick the object and lift it, then stop (moving to the bin = poses.json replay).
+# Run (in dev/): python scripts/record.py --config_path=configs/robot/record_pick.yaml   [--resume=true]
+# Ports/camera indices change with plug order -> check with: python scripts/dashboard.py
+robot:
+  type: so101_follower
+  port: COM4
+  id: fd_follower
+  cameras:  # 2026-10-16: 1=head, 2=wrist (indices swap between runs!). backend 700=DSHOW (same numbering as dashboard)
+    head: {type: opencv, index_or_path: 1, width: 640, height: 480, fps: 30, backend: 700}
+    wrist: {type: opencv, index_or_path: 2, width: 640, height: 480, fps: 30, backend: 700}
+teleop:
+  type: so101_leader
+  port: COM3
+  id: fd_leader
+dataset:  # root: scripts/record.py sets outputs/datasets/<repo name> (Google Drive must be paused: Desktop is synced)
+  repo_id: local/pick_v1
+  single_task: pick up the object and lift it
+  num_episodes: 50
+  episode_time_s: 15   # right arrow = end episode early
+  reset_time_s: 10     # put the object back on the taped spot (v1 = fixed position)
+  push_to_hub: false
+  streaming_encoding: true  # encode while recording: no temp image folders (Windows "access denied" on cleanup)
+  vcodec: h264              # fast enough for real-time encoding of 2 cameras
+display_data: true     # rerun viewer: live cameras + joints

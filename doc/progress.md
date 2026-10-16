@@ -98,7 +98,9 @@
 
 ### 확인 필요 / 미해결
 - 데이터셋을 GPU 서버로 옮기는 방법 (git 제외 폴더라 압축해서 전달)
-- 실행 스크립트(YOLO → ACT → 그리퍼 열기 → home) 미작성
+- `dev/scripts/run_auto.py` 작성 완료 (YOLO → 물체별 ACT → 그리퍼 열기 → home, 시도마다 성공 y/n을 `outputs/run_log.csv`에 기록). 가짜 체크포인트·가짜 로봇으로만 검증, 실제 로봇 미검증
+- 노트북은 CPU 전용 torch라 정책 루프 약 20Hz (데이터는 30Hz) → 동작이 느려질 수 있음
+- ultralytics는 venv에 `--no-deps`로 설치 (opencv-python 충돌 방지, `requirements.txt` 하단 참고)
 - `pick_bottle` 전체 통계의 분위수(q01~q99)는 재계산 안 함 (ACT는 평균/표준편차만 써서 영향 없음)
 
 ## 다음주 계획 (4주차, 마일스톤: 첫 자율 동작)
@@ -106,5 +108,6 @@
    ```
    lerobot-train --policy.type=act --dataset.repo_id=local/pick_tape --dataset.root=outputs/datasets/pick_tape --output_dir=outputs/train/act_pick_tape --policy.device=cuda --policy.push_to_hub=false --steps=50000 --batch_size=8
    ```
-2. 출근일: 학습된 정책으로 첫 자율 동작 시연, 성공률 1차 측정 시작(30회), 실패 유형 기록
-3. 실행 스크립트 작성: YOLO 분류 → 물체별 ACT → 그리퍼 열기 → home
+2. 학습된 체크포인트를 노트북 `dev/outputs/train/act_pick_<물체>/` 에 복사 → `python scripts/run_auto.py` 로 실제 로봇 첫 검증 (카메라 head/wrist 확인, 루프 Hz 확인)
+3. 출근일: 첫 자율 동작 시연, 성공률 1차 측정 시작(30회, `run_log.csv`), 실패 유형 기록
+4. 성공률이 낮으면 실패 유형별로 시연 추가 수집 (5주차 위치 다양화 v2 전에)

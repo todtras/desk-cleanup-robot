@@ -8,6 +8,7 @@ import argparse
 import csv
 import json
 import msvcrt
+import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -28,12 +29,14 @@ from lerobot.utils.constants import ACTION, OBS_STR
 from lerobot.utils.control_utils import predict_action
 from ultralytics import YOLO
 
-CFG = Path("configs/robot/record_pick.yaml")
+os.chdir(Path(__file__).resolve().parent.parent)  # 아래 상대경로는 dev 기준: 어느 폴더에서 실행해도 되게
+CFG =Path("configs/robot/record_pick.yaml")
 POSES = json.loads(Path("configs/robot/poses.json").read_text(encoding="utf-8"))
 LOG = Path("outputs/run_log.csv")
 CKPT = "outputs/train/act_pick_{}/checkpoints/last/pretrained_model"  # lerobot-train --output_dir 기준
 PLAN = {"tape": "office", "bottle": "trash", "pen": "pen"}  # YOLO 클래스 → 수거함 (정책은 act_pick_<클래스>)
-FPS, CONF = 30, 0.5
+FPS, CONF, IMGSZ = 30, 0.3, 640  # head 첫 프레임 기준 물병 탐지: 960/0.5 → 18/31, 640/0.3 → 30/31 (새 카메라 구도 0/19 → 11/19)
+BIN_X = 100  # head 640x480에서 수거함 구역 테이프 선의 x(약 88~115, 살짝 기울어짐). 박스 중심이 이보다 왼쪽이면 이미 정리된 물건 → 무시. 카메라 옮기면 다시 잴 것
 
 
 def load_policy(path, device):
@@ -48,8 +51,9 @@ def load_policy(path, device):
 def detect(model, robot, names):
     """head 카메라 한 장으로 탐지 → 정책이 있는 클래스 중 신뢰도 최고 (이름, 신뢰도) 또는 None"""
     img = cv2.cvtColor(robot.get_observation()["head"], cv2.COLOR_RGB2BGR)  # lerobot은 RGB, YOLO는 BGR
-    boxes = model.predict(img, conf=CONF, verbose=False)[0].boxes
-    found = [(model.names[int(c)], float(p)) for c, p in zip(boxes.cls, boxes.conf) if model.names[int(c)] in names]
+    boxes = model.predict(img, imgsz=IMGSZ, conf=CONF, verbose=False)[0].boxes  # imgsz 생략하면 학습값 960이 쓰임
+    found = [(model.names[int(c)], float(p)) for c, p, (x, _, _, _) in zip(boxes.cls, boxes.conf, boxes.xywh)
+             if model.names[int(c)] in names and x >= BIN_X]  # x = 박스 중심
     return max(found, key=lambda x: x[1]) if found else None
 
 

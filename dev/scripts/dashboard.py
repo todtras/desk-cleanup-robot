@@ -6,6 +6,7 @@ lerobot-record 실행 전에 이 창의 카메라 화면은 꺼야 함 (카메�
 """
 import glob
 import json
+import os
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -16,7 +17,8 @@ import pandas as pd
 import serial.tools.list_ports
 import yaml
 
-CFG = Path("configs/robot/record_pick.yaml")
+os.chdir(Path(__file__).resolve().parent.parent)  # 아래 상대경로는 dev 기준: 어느 폴더에서 실행해도 되게
+CFG =Path("configs/robot/record_pick.yaml")
 POSES = Path("configs/robot/poses.json")
 DATASET_DIRS = ["outputs/datasets/*", str(Path.home() / ".cache/huggingface/lerobot/local/*")]
 CAM_INDICES = range(5)

@@ -1,7 +1,7 @@
 """진짜 로봇용 Cleaner. 메서드와 status() 형식은 FakeCleaner(cleaner.py)와 같다 → server.py에서 바꿔 끼우기만 하면 됨.
 동작은 scripts/run_auto.py 함수를 그대로 쓴다 (탐지 → 정책 → 쥠 감지 → 수거함 → home).
 run_auto와 다른 점: 성공 여부를 사람이 입력하지 않고, home에서 다시 봤을 때 그 물건이 그 자리에 없으면 성공.
-실행: dev 폴더, lerobot venv에서  $env:ROBOT="real"; python -m uvicorn app.server:app --host 0.0.0.0 --port 8000"""
+실행: dev 폴더, lerobot venv에서  $env:ROBOT="real"; python -m uvicorn app.server:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 1"""
 import csv
 import json
 import logging
@@ -42,7 +42,7 @@ def near(a, b, px=SAME_SPOT_PX):
 class RealCleaner:
     def __init__(self, robot=None, step=None):
         self.settings = load_settings()
-        step = step or self.settings.get("step", "010000")
+        self.step = step = step or self.settings.get("step", "010000")
         logging.disable(logging.WARNING)  # 체크포인트마다 cuda 경고
         self.policies = {o: ra.load_policy(ra.CKPT.format(o, step), "cpu", 100)
                          for o in ra.PLAN if Path(ra.CKPT.format(o, step)).exists()}
@@ -190,7 +190,8 @@ class RealCleaner:
                           message=f"{OBJECTS[name]} 집는 중 ({attempt + 1}번째)")
                 t0 = time.perf_counter()
                 key, hold = ra.run_policy(self.robot, *self.policies[name], self.features, seconds, fps, 0.3,
-                                          ra.PAN_OFFSET.get(name, 0.0), poll_key=lambda: "q" if self.cmd == "stop" else None)
+                                          ra.PAN_OFFSET.get(name, 0.0) + (s.get("pan_scale", 1.0) * ra.pan_fix(name, self.step, box) if s.get("pan_fit", True) else 0.0),
+                                          extra=ra.reach_fix(name, ra.reach_px(name, self.step, box)), poll_key=lambda: "q" if self.cmd == "stop" else None)
                 if ra.ESTOP.is_set():
                     return
                 if hold is not None:

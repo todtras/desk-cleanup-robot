@@ -1,7 +1,8 @@
 """자율 실행: YOLO로 물체 판별 → 물체별 ACT 정책이 집어서 살짝 들어올림 → (쥠 감지) poses.json 자세로 수거함까지 → 놓고 home. 물체가 없을 때까지 반복.
 사용 (dev 폴더에서): python scripts/run_auto.py [--seconds 20] [--device cpu] [--fps 15] [--n_action_steps 40]
 - --n_action_steps: 작게(예: 40) 하면 물체 가까이서 다시 보고 위치를 보정 (빗나갈 때 시험)
-- --pan_offset: 늘 같은 쪽으로 빗나가면 좌우 회전 보정. 생략하면 클래스별 PAN_OFFSET (tape 2.0)
+- 좌우 회전 보정: 기본으로 물체 위치(YOLO 박스 x)에 따라 PAN_FIT 적용 (양 끝에서 바깥쪽으로 더 도는 버릇 상쇄). --no_pan_fit으로 끄기,
+  --pan_offset 값을 주면 그 값으로 고정
 - --smooth: 예측 동작 평활 (기본 0.3, 1이면 끔). 뚝뚝 끊기면 낮추고, 너무 굼뜨면 올림
 - --fps: 정책 루프 속도. 학습 데이터는 30Hz라 15면 같은 동작을 절반 속도로 (처음 시험할 때 추천)
 - 정책 실행 중 스페이스 = 지금 놓기(남은 시간 건너뜀), q = 이번 시도만 중단(그리퍼 열고 home → 다음 시도)
@@ -24,6 +25,7 @@ from pathlib import Path
 
 import cv2
 import draccus
+import numpy as np
 import torch
 import yaml
 from lerobot.cameras import opencv  # noqa: F401  (opencv 카메라 타입 등록)
@@ -54,6 +56,80 @@ LIFT_ACTIONS = 30  # 쥔 뒤 정책을 더 돌리는 스텝 수 (= 시연 1초 �
 SEND_HZ = 60  # 모터에 보내는 빈도 (텔레옵과 같게). 정책 스텝 사이는 시간 기준 직선 보간
 FPS, CONF, IMGSZ = 30, 0.3, 640  # head 첫 프레임 기준 물병 탐지: 960/0.5 → 18/31, 640/0.3 → 30/31 (새 카메라 구도 0/19 → 11/19)
 PAN_OFFSET = {}  # 클래스별 shoulder_pan 보정 (실물로 맞춤). 예전 tape 2.0은 v1 30k 기준이라 v2에서 뺌. 체크포인트 바꾸면 다시 맞출 것
+# ---------- 위치별 보정 (영점 조절) ----------
+# 정책은 물체가 양 끝·가까운 곳에 있을 때 일정하게 빗나감 → 물체 위치(YOLO 박스 중심 x)마다 보정값을 더함.
+#  pan: shoulder_pan에 더할 도. pan은 화면 x가 클수록(로봇 왼쪽) 작아짐 → +는 로봇 오른쪽으로
+#  reach: "물체가 r px(화면 y) 더 가까이 있는 것처럼" 어깨·팔꿈치를 바꿈. +는 덜 뻗음
+# 보정표 configs/robot/calib.json {"물체|스텝": {"pan": [[x, 도], ...], "reach": [[x, px], ...]}}: 표 사이는 직선, 표 밖은 끝값.
+# --calib로 돌리면 시도마다 "좌1 앞2"처럼 빗나간 쪽을 입력 → 그 위치 값이 고쳐져 저장됨. 정책이 보정을 약 3배로 키우니 작게.
+# 표가 없으면 pan은 PAN_FIT(녹화 화면으로 잰 오차 직선 ≈ a·x + c, 10/30 물병·지우개, 물병 2만은 실물로 다시 맞춤), reach는 0
+CALIB_FILE = Path("configs/robot/calib.json")
+CALIB = json.loads(CALIB_FILE.read_text(encoding="utf-8")) if CALIB_FILE.exists() else {}
+PAN_FIT = {("bottle", "010000"): (-0.0244, 7.14), ("bottle", "020000"): (-0.0237, 7.04),
+           ("eraser", "020000"): (-0.0135, 4.02)}  # 지우개: 물병 조정을 빌린 값(+6도@520)은 실물에서 지나치게 오른쪽 → 절반에서 시작, --calib로 맞춤
+PAN_FIT_X = (170, 580)  # 시연이 있는 범위 (밖은 끝값)
+CALIB_STEP = {"pan": 0.5, "reach": 2.0}  # 입력 1칸 = pan 0.5도 / reach 2px
+CALIB_MERGE_PX = 40  # 이 거리 안의 기존 칸은 새 값으로 바꿈
+# 시연에서 물체가 y로 1px 멀어질 때 쥘 때 (어깨 들기, 팔꿈치) 변화(도/px), v2 49~50개 직선 맞춤 (10/30)
+REACH_SLOPE = {"eraser": (0.389, -0.521), "bottle": (0.316, -0.206), "paper": (0.242, -0.357),
+               "pen": (0.395, -0.597), "tape": (0.387, -0.535)}
+# 시연에서 물체를 쥔 순간의 pan ≈ a·x + b·y + c (x = 박스 중심, y = 박스 아래쪽). 실제 시도의 pan 오차를 재는 기준 (시연끼리도 ±3도 흩어짐)
+DEMO_PAN = {"bottle": (-0.2181, -0.0265, 86.36), "eraser": (-0.2668, -0.0811, 117.0)}
+PAN_LOG = Path("outputs/pan_debug.csv")
+JOINT_LOG = Path("outputs/joint_debug.csv")
+GRASP_POSE = {}  # run_policy가 쥠을 감지한 순간의 관절값 (기록용)
+
+
+def _cx(box):
+    return (box[0] + box[2]) / 2
+
+
+def _table(name, step, kind):
+    return CALIB.get(f"{name}|{step}", {}).get(kind)
+
+
+def pan_fix(name, step, box):
+    t = _table(name, step, "pan")
+    if t:
+        return float(np.interp(_cx(box), *zip(*t)))
+    a, c = PAN_FIT.get((name, step), (0.0, 0.0))
+    return -(a * min(max(_cx(box), PAN_FIT_X[0]), PAN_FIT_X[1]) + c)
+
+
+def reach_px(name, step, box):
+    t = _table(name, step, "reach")
+    return float(np.interp(_cx(box), *zip(*t))) if t else 0.0
+
+
+def reach_fix(name, px):
+    a, b = REACH_SLOPE.get(name, (0.0, 0.0))
+    return {"shoulder_lift.pos": -a * px, "elbow_flex.pos": -b * px}
+
+
+def calib_add(name, step, box, kind, delta):
+    """이 위치(x)의 보정값을 지금 값 + delta로 바꿔 저장. pan 표를 처음 만들 땐 PAN_FIT 직선을 4칸으로 깔고 시작"""
+    x, cur = round(_cx(box)), (pan_fix if kind == "pan" else reach_px)(name, step, box)
+    entry = CALIB.setdefault(f"{name}|{step}", {})
+    t = entry.get(kind) or ([[px, round(pan_fix(name, step, (px, 0, px, 0)), 2)] for px in (170, 310, 450, 580)]
+                            if kind == "pan" else [])
+    t = [p for p in t if abs(p[0] - x) > CALIB_MERGE_PX] + [[x, round(cur + delta, 2)]]
+    entry[kind] = sorted(t)
+    CALIB_FILE.write_text(json.dumps(CALIB, ensure_ascii=False, indent=1), encoding="utf-8")
+    return cur + delta
+
+
+def calib_input(name, step, box):
+    """빗나간 방향 입력 → 보정표 수정. 좌/우 = 그리퍼가 물체보다 로봇 기준 어느 쪽, 앞 = 너무 뻗음(로봇에서 멀리), 뒤 = 덜 뻗음"""
+    import re
+    s = input("보정 입력 (그리퍼가 간 쪽, 로봇 기준. 예: 좌1  우2  앞1  뒤2  좌1 앞1 / 엔터=그대로): ").strip()
+    for d, n in re.findall(r"(좌|우|앞|뒤)\s*(\d*\.?\d*)", s):
+        n = float(n or 1)
+        kind = "pan" if d in "좌우" else "reach"
+        sign = {"좌": +1, "우": -1, "앞": +1, "뒤": -1}[d]  # 너무 왼쪽 → pan +(오른쪽으로), 너무 뻗음 → reach +(덜 뻗기)
+        v = calib_add(name, step, box, kind, sign * n * CALIB_STEP[kind])
+        print(f"  {name} x={_cx(box):.0f}: {kind} → {v:+.1f}{'도' if kind == 'pan' else 'px'} (저장: {CALIB_FILE})")
+
+
 ESTOP = threading.Event()  # 웹 UI(app/real_cleaner.py)의 비상정지: 정책 루프와 move_to가 즉시 멈춤. 터미널 실행에서는 안 씀
 BIN_X = 100  # head 640x480에서 수거함 구역 테이프 선의 x(약 88~115, 살짝 기울어짐). 박스 중심이 이보다 왼쪽이면 이미 정리된 물건 → 무시. 카메라 옮기면 다시 잴 것
 
@@ -75,12 +151,6 @@ def detect_all(model, head_rgb, names):
     return [(model.names[int(c)], float(p), tuple(int(v) for v in xyxy))
             for c, p, xyxy in zip(boxes.cls, boxes.conf, boxes.xyxy)
             if model.names[int(c)] in names and (xyxy[0] + xyxy[2]) / 2 >= BIN_X]
-
-
-def detect(model, robot, names):
-    """head 카메라 한 장으로 탐지 → 정책이 있는 클래스 중 신뢰도 최고 (이름, 신뢰도) 또는 None"""
-    found = detect_all(model, robot.get_observation()["head"], names)
-    return max(found, key=lambda x: x[1])[:2] if found else None
 
 
 def key():
@@ -111,7 +181,7 @@ def observe(robot, lock):
     return obs
 
 
-def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_offset, poll_key=key):
+def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_offset, poll_key=key, extra=None):
     """정책으로 seconds초 구동. 스페이스로 조기 종료. 물체를 쥐면 LIFT_ACTIONS만큼 더 돌려 들어올린 뒤 끝냄.
     반환: (눌린 키 ' '/'q'/None, 쥐었으면 그때 명령하던 그리퍼 값 아니면 None)
     poll_key: 키 입력 대신 쓸 함수 (웹 UI가 ' '/'q'를 넘김). ESTOP이 켜지면 바로 멈춤
@@ -150,6 +220,8 @@ def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_off
             act = make_robot_action(predict_action(frame, policy, torch.device(policy.config.device), pre, post,
                                                    policy.config.use_amp), features)
             act["shoulder_pan.pos"] += pan_offset  # 모델이 좌우로 한쪽에 치우칠 때 보정
+            for m, v in (extra or {}).items():  # 그 밖의 관절 보정 (reach_fix: 덜/더 뻗기)
+                act[m] += v
             last = seg[0][1]  # 직전 목표
             act = {m: last[m] + smooth * (act[m] - last[m]) for m in act}  # 지수 평활: 덜 학습된 ACT의 들쭉날쭉한 예측을 고르게
             tn = time.perf_counter()
@@ -157,6 +229,8 @@ def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_off
             calc.append(time.perf_counter() - t)
             if hold is None and grasped(g, fps):
                 hold, lift, grip0 = act["gripper.pos"], LIFT_ACTIONS, g[-1]
+                GRASP_POSE.clear()
+                GRASP_POSE.update({m: obs[m] for m in features[ACTION]["names"]})
                 print(f"쥠 감지 (그리퍼 {g[-1]:.1f}) → {LIFT_ACTIONS}스텝 더 들어올린 뒤 수거함 자세로")
             elif hold is not None and g[-1] > grip0 + 3:  # 들어올리다 다시 벌림 = 정책이 다시 잡으려는 중 → 취소
                 hold = None
@@ -232,6 +306,10 @@ def main():
     ap.add_argument("--n_action_steps", type=int, default=100, help="ACT 동작 묶음 중 실행할 개수(1~100). 30~50이면 가까이 가서 다시 보고 보정")
     ap.add_argument("--pan_offset", type=float, default=None, help="정책 shoulder_pan 출력에 더할 값. 생략하면 클래스별 PAN_OFFSET (늘 한쪽으로 빗나갈 때)")
     ap.add_argument("--smooth", type=float, default=0.3, help="동작 평활 (1=끔, 작을수록 부드럽지만 늦게 따라감). 10k 체크포인트 기준 0.3이면 시연 데이터 수준")
+    ap.add_argument("--no_pan_fit", action="store_true", help="위치별 좌우 회전 보정(PAN_FIT) 끄기 (비교 시험용)")
+    ap.add_argument("--calib", action="store_true", help="보정 모드: 시도마다 빗나간 쪽(좌/우/앞/뒤)을 입력하면 configs/robot/calib.json 보정표가 고쳐짐")
+    ap.add_argument("--reach_px", type=float, default=None, help="뻗는 거리 보정: 물체가 이만큼(px) 가까이 있는 것처럼 (+ = 덜 뻗음). 생략하면 보정표(calib.json)")
+    ap.add_argument("--pan_scale", type=float, default=1.0, help="PAN_FIT 보정 배율. 실제 로봇 오차가 녹화로 잰 것보다 크면 키움 (outputs/pan_debug.csv 차이가 0에 가깝게)")
     ap.add_argument("--fps", type=float, default=FPS, help="정책 루프 속도. 낮추면 느리게 (시간도 그만큼 늘릴 것: --seconds)")
     args = ap.parse_args()
     if args.stats:
@@ -272,16 +350,39 @@ def main():
                 log.writerow(["time", "class", "conf", "seconds", "success", "reason"])
             session = []  # 이번 실행 기록 (class, y/n)
             while True:
-                det = detect(model, robot, policies)
+                found = detect_all(model, robot.get_observation()["head"], policies)
+                det = max(found, key=lambda d: d[1]) if found else None
                 if det is None:
                     cv2.imwrite("outputs/last_head.jpg", cv2.cvtColor(robot.get_observation()["head"], cv2.COLOR_RGB2BGR))
                     print("탐지된 물체 없음 → 종료. head 화면: outputs/last_head.jpg (책상이 안 보이면 카메라 번호 확인)")
                     break
-                name, conf = det
-                print(f"\n{name} ({conf:.2f}) → act_pick_{name} 실행. 스페이스=지금 놓기, q=이번 시도 중단")
+                name, conf, box = det
+                pan = PAN_OFFSET.get(name, 0.0) + (0.0 if args.no_pan_fit else args.pan_scale * pan_fix(name, args.step, box))
+                if args.pan_offset is not None:
+                    pan = args.pan_offset
+                reach = reach_px(name, args.step, box) if args.reach_px is None else args.reach_px
+                print(f"\n{name} ({conf:.2f}, x={(box[0] + box[2]) // 2}, y={(box[1] + box[3]) // 2}) → act_pick_{name} 실행, "
+                      f"pan 보정 {pan:+.1f}도, 거리 보정 {reach:+.0f}px. 스페이스=지금 놓기, q=이번 시도 중단")
                 t0 = time.perf_counter()
-                _, hold = run_policy(robot, *policies[name], features, args.seconds, args.fps, args.smooth,
-                                     PAN_OFFSET.get(name, 0.0) if args.pan_offset is None else args.pan_offset)
+                GRASP_POSE.clear()
+                _, hold = run_policy(robot, *policies[name], features, args.seconds, args.fps, args.smooth, pan,
+                                     extra=reach_fix(name, reach))
+                new = not JOINT_LOG.exists()
+                with JOINT_LOG.open("a", encoding="utf-8") as jf:  # 쥔 순간 관절 (쥠 감지 못 하면 빈칸) — 거리 보정 맞출 때 참고
+                    jf.write(("time,class,step,x,y,pan_fix,reach_px,pan,lift,elbow,wflex,held\n" if new else "") +
+                             f"{datetime.now():%H:%M:%S},{name},{args.step},{(box[0] + box[2]) // 2},{(box[1] + box[3]) // 2},"
+                             f"{pan:.2f},{reach:.0f}," + ",".join(f"{GRASP_POSE[m]:.1f}" if m in GRASP_POSE else ""
+                             for m in ("shoulder_pan.pos", "shoulder_lift.pos", "elbow_flex.pos", "wrist_flex.pos")) +
+                             f",{hold is not None}\n")
+                if name in DEMO_PAN:  # 실제 pan 오차 재기: 정책이 끝난 자세(쥐고 들어 올린 직후) vs 시연에서 이 위치 물체를 쥔 pan
+                    a, b, c = DEMO_PAN[name]
+                    cx, by, end = (box[0] + box[2]) / 2, box[3], robot.get_observation()["shoulder_pan.pos"]
+                    want = a * cx + b * by + c
+                    print(f"[pan] 끝 {end:.1f}도, 시연 기준 {want:.1f}도 → 차이 {end - want:+.1f}도 (보정 {pan:+.1f} 포함)")
+                    new = not PAN_LOG.exists()
+                    with PAN_LOG.open("a", encoding="utf-8") as pf:
+                        pf.write(("time,class,step,x,y,pan_fix,end_pan,demo_pan,held\n" if new else "") +
+                                 f"{datetime.now():%H:%M:%S},{name},{args.step},{cx:.0f},{by},{pan:.2f},{end:.2f},{want:.2f},{hold is not None}\n")
                 if hold is not None:
                     carry_and_drop(robot, PLAN[name], hold)
                 else:  # 못 쥠 / 스페이스 / q / 시간 초과 → 그 자리에서 그리퍼 열고 home
@@ -297,6 +398,8 @@ def main():
                     f.flush()
                     session.append((name, ok))
                     print(f"성공률  이번 실행: {fmt(rates(session))}  |  파일 전체: {fmt(file_rates())}")
+                    if args.calib:
+                        calib_input(name, args.step, box)
                 if ok == "q":  # 정책 중 q는 이번 시도만 끊음 (위에서 이미 home)
                     break
     finally:

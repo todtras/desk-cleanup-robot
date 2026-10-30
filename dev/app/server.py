@@ -1,7 +1,8 @@
 """웹 서버: 브라우저 화면(static/)과 정리 로봇(Cleaner)을 이어준다.
-실행 (dev 폴더에서): python -m uvicorn app.server:app --host 0.0.0.0 --port 8000
+실행 (dev 폴더에서): python -m uvicorn app.server:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 1
 → 노트북: http://localhost:8000   같은 와이파이의 폰: http://<노트북 IP>:8000
-진짜 로봇 (팀장 노트북, lerobot venv): PowerShell에서 $env:ROBOT="real" 후 같은 명령"""
+진짜 로봇 (팀장 노트북, lerobot venv): PowerShell에서 $env:ROBOT="real" 후 같은 명령
+--timeout-graceful-shutdown 1: 실시간 영상 연결은 끝나지 않아서, 없으면 Ctrl+C 후 "Waiting for connections to close"에서 멈춤"""
 import os
 import time
 from pathlib import Path

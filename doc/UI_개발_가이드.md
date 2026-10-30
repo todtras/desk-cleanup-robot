@@ -232,7 +232,7 @@ dev/app/
 ```bash
 cd dev
 .venv-ui\Scripts\activate
-python -m uvicorn app.server:app --host 0.0.0.0 --port 8000
+python -m uvicorn app.server:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 1
 ```
 1. 브라우저에서 `http://localhost:8000` → 영상 2개와 "대기 중이에요"가 보이면 성공
 2. **[정리 시작]** → 영상이 움직이고 문구가 바뀐다. 일시정지·계속·중지·비상정지도 눌러 보기
@@ -333,6 +333,7 @@ git push -u origin ui/server
 | 고쳤는데 화면이 그대로 | 브라우저 캐시 → `Ctrl+F5` (휴대폰은 새로고침 길게) |
 | 영상 위 글씨가 `???` | OpenCV는 한글을 못 씀 → 영상 위 글씨는 영어, 한글은 HTML로 |
 | 한글이 깨짐 | 파일을 UTF-8로 저장 (VS Code 오른쪽 아래 인코딩 확인) |
+| Ctrl+C 했는데 "Waiting for connections to close"에서 멈춤 | 실시간 영상 연결이 안 끝나서. Ctrl+C 한 번 더 (또는 실행할 때 `--timeout-graceful-shutdown 1`) |
 | Python 수정이 반영 안 됨 | 서버를 껐다 켜기 (또는 `--reload` 옵션) |
 
 막히면 30분 이상 혼자 붙잡지 말고 단톡방에: **무엇을 하려고 했는지 + 실행한 명령 + 에러 전체**.

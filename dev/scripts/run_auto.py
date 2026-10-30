@@ -45,7 +45,7 @@ os.chdir(Path(__file__).resolve().parent.parent)  # 아래 상대경로는 dev �
 CFG =Path("configs/robot/record_pick.yaml")
 POSES = json.loads(Path("configs/robot/poses.json").read_text(encoding="utf-8"))
 LOG = Path("outputs/run_log.csv")
-REASONS = {"1": "탐지 실패", "2": "빗나감-왼쪽", "3": "빗나감-오른쪽", "4": "빗나감-앞뒤",
+REASONS = {"1": "탐지 실패", "2": "빗나감-왼쪽", "3": "빗나감-오른쪽", "4": "빗나감-앞뒤", "9": "너무 뻗음(앞)", "0": "덜 뻗음(뒤)",
            "5": "쥐었다 놓침", "6": "쥠 감지 안 됨", "7": "수거함 잘못", "8": "멈춤/시간 초과"}
 # 빗나감 방향 = 그리퍼가 물체보다 어느 쪽으로 갔나, 로봇 기준 (로봇 왼쪽 = head 화면 오른쪽). 앞뒤 = 로봇에서 멀게/가깝게
 REASONS_HELP = " ".join(f"{k}={v}" for k, v in REASONS.items())
@@ -289,11 +289,16 @@ def fmt(r):
     return ", ".join(f"{c} {y}/{n} ({100 * y / n:.0f}%)" for c, (y, n) in sorted(r.items())) or "기록 없음"
 
 
+def tag(r):
+    """기록 한 줄 → 'bottle 보정O' 처럼 물체 + 보정 여부 (예전 기록엔 fix 칸이 없어 물체만)"""
+    return r["class"] + {"on": " 보정O", "off": " 보정X"}.get(r.get("fix") or "", "")
+
+
 def file_rates():
     if not LOG.exists():
         return {}
     with LOG.open(encoding="utf-8-sig") as f:
-        return rates((r["class"], r["success"]) for r in csv.DictReader(f))
+        return rates((tag(r), r["success"]) for r in csv.DictReader(f))
 
 
 def main():
@@ -316,7 +321,7 @@ def main():
         print(f"{LOG}: {fmt(file_rates())}")
         if LOG.exists():
             with LOG.open(encoding="utf-8-sig") as f:
-                fails = Counter((r["class"], r.get("reason") or "?") for r in csv.DictReader(f) if r["success"] == "n")
+                fails = Counter((tag(r), r.get("reason") or "?") for r in csv.DictReader(f) if r["success"] == "n")
             for (c, why), n in sorted(fails.items()):
                 print(f"  실패 {c} - {why}: {n}")
         return
@@ -347,7 +352,7 @@ def main():
         with LOG.open("a", newline="", encoding="utf-8-sig") as f:
             log = csv.writer(f)
             if new_log:
-                log.writerow(["time", "class", "conf", "seconds", "success", "reason"])
+                log.writerow(["time", "class", "conf", "seconds", "success", "reason", "step", "fix", "pan", "reach", "x", "y"])
             session = []  # 이번 실행 기록 (class, y/n)
             while True:
                 found = detect_all(model, robot.get_observation()["head"], policies)
@@ -393,10 +398,12 @@ def main():
                     if ok == "n":
                         r = input(f"실패 이유 번호 또는 직접 입력 ({REASONS_HELP}) [빗나감 = 그리퍼가 물체보다 로봇 기준 어느 쪽]: ").strip()
                         reason = REASONS.get(r, r)
-                    log.writerow([datetime.now().isoformat(timespec="seconds"), name, f"{conf:.2f}",
-                                  f"{time.perf_counter() - t0:.1f}", ok, reason])
+                    fix = "off" if abs(pan) < 1e-6 and abs(reach) < 1e-6 else "on"  # 실제로 더한 보정 기준
+                    row = [datetime.now().isoformat(timespec="seconds"), name, f"{conf:.2f}", f"{time.perf_counter() - t0:.1f}",
+                           ok, reason, args.step, fix, f"{pan:.2f}", f"{reach:.1f}", (box[0] + box[2]) // 2, (box[1] + box[3]) // 2]
+                    log.writerow(row)
                     f.flush()
-                    session.append((name, ok))
+                    session.append((tag({"class": name, "fix": fix}), ok))
                     print(f"성공률  이번 실행: {fmt(rates(session))}  |  파일 전체: {fmt(file_rates())}")
                     if args.calib:
                         calib_input(name, args.step, box)

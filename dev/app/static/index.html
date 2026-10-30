@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>책상 정리 로봇</title>
+  <style>
+    body { font-family: sans-serif; margin: 16px; max-width: 900px; }
+    #cams { display: flex; gap: 8px; flex-wrap: wrap; }
+    #cams img { width: 100%; max-width: 440px; border-radius: 8px; background: #ddd; }
+    #message { font-size: 1.3em; margin: 12px 0; }
+    button { font-size: 1.1em; padding: 10px 18px; margin: 4px; border-radius: 8px; }
+    #estop { background: #d32f2f; color: white; }
+  </style>
+</head>
+<body>
+  <h1>책상 정리 로봇</h1>
+  <div id="cams">
+    <img src="/video/head" alt="책상 전체 카메라">
+    <img src="/video/wrist" alt="로봇 손 카메라">
+  </div>
+  <div id="message">연결 중...</div>
+  <div id="progress"></div>
+  <button id="start">정리 시작</button>
+  <button id="pause">일시정지</button>
+  <button id="resume">계속</button>
+  <button id="stop">중지</button>
+  <button id="estop">비상정지</button>
+  <ul id="notifications"></ul>
+  <script>
+    for (const id of ["start", "pause", "resume", "stop", "estop"]) {
+      document.getElementById(id).onclick = () => fetch("/api/" + id, { method: "POST" });
+    }
+    async function refresh() {
+      const s = await (await fetch("/api/status")).json();
+      document.getElementById("message").textContent = s.message;
+      const p = s.progress;
+      document.getElementById("progress").textContent = `정리 ${p.done} · 실패 ${p.failed} · 남음 ${p.remaining}`;
+      document.getElementById("start").disabled = ["cleaning", "paused"].includes(s.state);
+      document.getElementById("pause").disabled = s.state !== "cleaning";
+      document.getElementById("resume").disabled = s.state !== "paused";
+      document.getElementById("stop").disabled = !["cleaning", "paused"].includes(s.state);
+      document.getElementById("notifications").innerHTML =
+        s.notifications.slice(-5).reverse().map(n => `<li>${n.time} ${n.text}</li>`).join("");
+    }
+    setInterval(refresh, 500);
+    refresh();
+  </script>
+</body>
+</html>

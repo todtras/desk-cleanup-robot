@@ -174,6 +174,7 @@ Cleaner의 상태(`state`):
 | | A: 서버 · 로봇 두뇌 | B: 화면 |
 |---|---|---|
 | 파일 | `dev/app/server.py`, `dev/app/cleaner.py` | `dev/app/static/` 안의 `index.html`, `settings.html`, `history.html`, `style.css`, `app.js` |
+| 건드리지 않는 파일 | `dev/app/real_cleaner.py`, `dev/app/check_real.py`, `dev/scripts/` (팀장 담당, 진짜 로봇) | |
 | 주요 일 | API, 가짜 로봇 다듬기, 기록 저장, 원격 접속·보안, 오류 상황 흉내 | 화면 3개 디자인, 버튼 규칙, 휴대폰 화면, 연결 끊김 표시 |
 | 필요한 것 | Python | HTML/CSS/JavaScript (`fetch`) |
 
@@ -213,307 +214,19 @@ Cleaner의 상태(`state`):
    dev/outputs/ui_pack/clips/pen_0_head.mp4, pen_0_wrist.mp4 ...   ← 물건 5종 × 4개 시연 영상
    ```
 
-### 5-2. 시작 코드 3개 만들기
-아래 3개 파일을 **그대로** 만든다. 팀장 노트북에서 실제로 돌려서 확인한 코드다 (정리 시작 → 일시정지 → 계속 → 끝 → 중지 → 비상정지까지 자동 시험 통과, 브라우저에서 실시간 화면 확인).
+### 5-2. 시작 코드 (이미 레포에 있음)
+clone하면 `dev/app/`에 바로 돌아가는 시작 코드가 들어 있다. 팀장 노트북에서 정리 시작 → 일시정지 → 계속 → 끝 → 중지 → 비상정지까지 자동 시험을 통과했고, 브라우저에서 실시간 화면도 확인했다.
 
 ```
-dev/app/__init__.py          ← 빈 파일
-dev/app/cleaner.py
-dev/app/server.py
-dev/app/static/index.html
+dev/app/
+  __init__.py         빈 파일 (app을 파이썬 패키지로)
+  server.py           웹 서버 (A)        — API, 실시간 영상
+  cleaner.py          가짜 로봇 (A)      — 녹화 영상으로 정리하는 척
+  static/index.html   메인 화면 (B)      — 영상 2개, 상태 문구, 버튼 5개, 알림 (디자인 없음)
+  real_cleaner.py     진짜 로봇 (팀장)   — 건드리지 말 것, 7장
+  check_real.py       진짜 로봇 점검 (팀장)
 ```
-
-<details>
-<summary><b>dev/app/cleaner.py</b> (로봇 두뇌 — 가짜)</summary>
-
-```python
-"""정리 로봇 '두뇌' 쪽. 화면(server.py)은 이 파일의 Cleaner만 쓴다.
-지금은 녹화 영상으로 흉내 내는 FakeCleaner. 나중에 팀장이 같은 메서드를 가진 RealCleaner(진짜 로봇)를 만든다."""
-import json
-import random
-import threading
-import time
-from datetime import datetime
-from pathlib import Path
-
-import cv2
-
-PACK = Path(__file__).resolve().parent.parent / "outputs" / "ui_pack"  # 팀장이 준 가짜 로봇 데이터
-SETTINGS_FILE = Path(__file__).resolve().parent.parent / "configs" / "app_settings.json"
-
-OBJECTS = {"tape": "테이프", "bottle": "물병", "pen": "펜", "eraser": "지우개", "paper": "종이"}
-BINS = {"tape": "사무용품", "bottle": "쓰레기", "pen": "필기구", "eraser": "필기구", "paper": "쓰레기"}
-DEFAULT_SETTINGS = {"objects": {k: True for k in OBJECTS}, "speed": "normal", "max_retries": 1}
-
-
-def load_settings():
-    if SETTINGS_FILE.exists():
-        return {**DEFAULT_SETTINGS, **json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))}
-    return dict(DEFAULT_SETTINGS)
-
-
-class FakeCleaner:
-    def __init__(self):
-        self.clips = json.loads((PACK / "clips.json").read_text(encoding="utf-8"))
-        self.settings = load_settings()
-        self.lock = threading.Lock()
-        self.cmd = None  # 화면이 누른 버튼: "pause" / "stop" / "estop"
-        self.frames = {"head": None, "wrist": None}  # 지금 화면 (JPEG bytes)
-        self.st = {"state": "idle", "step": None, "current": None, "message": "대기 중이에요",
-                   "detected": [], "progress": {"done": 0, "failed": 0, "remaining": 0}, "notifications": []}
-        self._show_still()
-
-    # ---------- 화면이 부르는 메서드 (모두 바로 반환) ----------
-    def status(self):
-        with self.lock:
-            return json.loads(json.dumps(self.st))  # 복사본
-
-    def frame(self, cam):
-        return self.frames[cam]
-
-    def start(self):
-        if self.st["state"] in ("cleaning", "paused"):
-            return False
-        self.cmd = None
-        threading.Thread(target=self._run, daemon=True).start()
-        return True
-
-    def pause(self):
-        """지금 물건은 마저 정리하고 멈춤 (물건을 든 채 공중에서 멈추면 위험)"""
-        if self.st["state"] == "cleaning":
-            self.cmd = "pause"
-            self._set(message="지금 물건까지 정리하고 멈출게요")
-
-    def resume(self):
-        if self.st["state"] == "paused":
-            self.cmd = None
-
-    def stop(self):
-        self.cmd = "stop"
-
-    def estop(self):
-        self.cmd = "estop"
-
-    def get_settings(self):
-        return self.settings
-
-    def set_settings(self, new):
-        if self.st["state"] in ("cleaning", "paused"):
-            return False  # 정리 중에는 못 바꿈
-        self.settings = {**self.settings, **new}
-        SETTINGS_FILE.write_text(json.dumps(self.settings, ensure_ascii=False, indent=1), encoding="utf-8")
-        return True
-
-    # ---------- 내부 ----------
-    def _set(self, **kw):
-        with self.lock:
-            self.st.update(kw)
-
-    def _notify(self, text, level="info"):
-        with self.lock:
-            self.st["notifications"].append({"time": datetime.now().strftime("%H:%M:%S"), "level": level, "text": text})
-            self.st["notifications"] = self.st["notifications"][-50:]
-
-    def _show_still(self, clip=None, boxes=()):
-        clip = clip or self.clips[0]
-        for cam in ("head", "wrist"):
-            ok, img = cv2.VideoCapture(str(PACK / clip[cam])).read()
-            if cam == "head":
-                for b in boxes:
-                    cv2.rectangle(img, tuple(b["box"][:2]), tuple(b["box"][2:]), (0, 200, 0), 2)
-                    cv2.putText(img, f'{b["object"]} {b["conf"]:.2f}', (b["box"][0], b["box"][1] - 6),  # OpenCV 글씨는 영어만
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 0), 2)
-            self.frames[cam] = cv2.imencode(".jpg", img)[1].tobytes()
-
-    def _wait_if_paused(self):
-        while self.cmd == "pause":
-            self._set(state="paused", message="일시정지 — 계속하려면 '계속'을 누르세요")
-            time.sleep(0.2)
-        if self.cmd is None:
-            self._set(state="cleaning")
-
-    def _play(self, clip, until=None):
-        """영상 재생 (= 로봇이 움직이는 중). 중지 버튼이면 False"""
-        caps = {c: cv2.VideoCapture(str(PACK / clip[c])) for c in ("head", "wrist")}
-        speed = 1.0 if self.settings["speed"] == "normal" else 0.6
-        n = 0
-        while until is None or n < until * 15:
-            if self.cmd in ("stop", "estop"):
-                return False
-            imgs = {c: cap.read() for c, cap in caps.items()}
-            if not all(ok for ok, _ in imgs.values()):
-                break
-            for c, (_, img) in imgs.items():
-                self.frames[c] = cv2.imencode(".jpg", img)[1].tobytes()
-            n += 1
-            time.sleep(1 / 15 / speed)
-        return True
-
-    def _run(self):
-        todo = [o for o, on in self.settings["objects"].items() if on]
-        random.shuffle(todo)
-        self._set(state="cleaning", step="detecting", current=None, message="책상을 살펴보는 중이에요",
-                  progress={"done": 0, "failed": 0, "remaining": len(todo)})
-        self._notify("정리를 시작했어요")
-        done = failed = 0
-        for obj in todo:
-            self._wait_if_paused()
-            clip = random.choice([c for c in self.clips if c["object"] == obj])
-            det = [{"object": obj, "conf": round(random.uniform(0.6, 0.95), 2), "box": clip["box"]}]
-            self._set(step="detecting", detected=det, message=f"{OBJECTS[obj]}을(를) 찾았어요")
-            self._show_still(clip, det)
-            time.sleep(1.0)
-            ok = False
-            for attempt in range(1 + self.settings["max_retries"]):
-                self._set(step="picking", current={"object": obj, "bin": BINS[obj], "attempt": attempt + 1},
-                          message=f"{OBJECTS[obj]} 집는 중 ({attempt + 1}번째)")
-                if not self._play(clip):
-                    return self._finish_stop()
-                ok = random.random() < 0.7  # 가짜: 70% 확률로 성공
-                if ok:
-                    break
-                self._notify(f"{OBJECTS[obj]}을(를) 놓쳤어요. 다시 시도해요", "warn")
-            if ok:
-                self._set(step="carrying", message=f"{OBJECTS[obj]}을(를) {BINS[obj]} 수거함으로 옮기는 중")
-                time.sleep(2.0)
-                done += 1
-            else:
-                failed += 1
-                self._notify(f"{OBJECTS[obj]}을(를) 집지 못해 건너뛰었어요. 직접 정리해 주세요", "warn")
-            self._set(step="returning", message="처음 자세로 돌아가는 중" if self.cmd != "pause" else "처음 자세로 돌아가서 멈출게요")
-            time.sleep(1.0)
-            self._set(progress={"done": done, "failed": failed, "remaining": len(todo) - done - failed})
-        self._set(state="done", step=None, current=None, detected=[], message=f"정리 끝! {done}개 정리, {failed}개 실패")
-        self._notify(f"정리를 마쳤어요 ({done}개 정리, {failed}개 실패)")
-
-    def _finish_stop(self):
-        if self.cmd == "estop":
-            self._set(state="estop", step=None, message="비상정지! 로봇이 그 자세로 멈췄어요. 주변을 확인한 뒤 다시 시작하세요")
-            self._notify("비상정지 버튼이 눌렸어요", "error")
-        else:
-            self._set(state="idle", step=None, current=None, message="중지했어요. 처음 자세로 돌아왔어요")
-            self._notify("정리를 중지했어요")
-        self.cmd = None
-```
-</details>
-
-<details>
-<summary><b>dev/app/server.py</b> (웹 서버)</summary>
-
-```python
-"""웹 서버: 브라우저 화면(static/)과 정리 로봇(Cleaner)을 이어준다.
-실행 (dev 폴더에서): python -m uvicorn app.server:app --host 0.0.0.0 --port 8000
-→ 노트북: http://localhost:8000   같은 와이파이의 폰: http://<노트북 IP>:8000"""
-import time
-from pathlib import Path
-
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
-from fastapi.staticfiles import StaticFiles
-
-from app.cleaner import FakeCleaner
-
-app = FastAPI()
-cleaner = FakeCleaner()
-
-
-@app.get("/api/status")
-def status():
-    return cleaner.status()
-
-
-@app.post("/api/{action}")
-def command(action: str):
-    actions = {"start": cleaner.start, "pause": cleaner.pause, "resume": cleaner.resume,
-               "stop": cleaner.stop, "estop": cleaner.estop}
-    if action not in actions:
-        return {"ok": False, "error": f"모르는 명령: {action}"}
-    result = actions[action]()
-    return {"ok": result is not False}
-
-
-@app.get("/api/settings")
-def get_settings():
-    return cleaner.get_settings()
-
-
-@app.put("/api/settings")
-def put_settings(new: dict):
-    return {"ok": cleaner.set_settings(new)}
-
-
-@app.get("/video/{cam}")
-def video(cam: str):
-    """MJPEG: 브라우저에서 <img src="/video/head"> 하나로 실시간 화면이 나온다"""
-    def gen():
-        while True:
-            jpg = cleaner.frame(cam)
-            if jpg:
-                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n"
-            time.sleep(1 / 15)
-    return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame")
-
-
-app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")
-```
-</details>
-
-<details>
-<summary><b>dev/app/static/index.html</b> (메인 화면 — 뼈대만)</summary>
-
-```html
-<!doctype html>
-<html lang="ko">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>책상 정리 로봇</title>
-  <style>
-    body { font-family: sans-serif; margin: 16px; max-width: 900px; }
-    #cams { display: flex; gap: 8px; flex-wrap: wrap; }
-    #cams img { width: 100%; max-width: 440px; border-radius: 8px; background: #ddd; }
-    #message { font-size: 1.3em; margin: 12px 0; }
-    button { font-size: 1.1em; padding: 10px 18px; margin: 4px; border-radius: 8px; }
-    #estop { background: #d32f2f; color: white; }
-  </style>
-</head>
-<body>
-  <h1>책상 정리 로봇</h1>
-  <div id="cams">
-    <img src="/video/head" alt="책상 전체 카메라">
-    <img src="/video/wrist" alt="로봇 손 카메라">
-  </div>
-  <div id="message">연결 중...</div>
-  <div id="progress"></div>
-  <button id="start">정리 시작</button>
-  <button id="pause">일시정지</button>
-  <button id="resume">계속</button>
-  <button id="stop">중지</button>
-  <button id="estop">비상정지</button>
-  <ul id="notifications"></ul>
-  <script>
-    for (const id of ["start", "pause", "resume", "stop", "estop"]) {
-      document.getElementById(id).onclick = () => fetch("/api/" + id, { method: "POST" });
-    }
-    async function refresh() {
-      const s = await (await fetch("/api/status")).json();
-      document.getElementById("message").textContent = s.message;
-      const p = s.progress;
-      document.getElementById("progress").textContent = `정리 ${p.done} · 실패 ${p.failed} · 남음 ${p.remaining}`;
-      document.getElementById("start").disabled = ["cleaning", "paused"].includes(s.state);
-      document.getElementById("pause").disabled = s.state !== "cleaning";
-      document.getElementById("resume").disabled = s.state !== "paused";
-      document.getElementById("stop").disabled = !["cleaning", "paused"].includes(s.state);
-      document.getElementById("notifications").innerHTML =
-        s.notifications.slice(-5).reverse().map(n => `<li>${n.time} ${n.text}</li>`).join("");
-    }
-    setInterval(refresh, 500);
-    refresh();
-  </script>
-</body>
-</html>
-```
-</details>
+처음에는 **코드를 고치지 말고** 5-3대로 실행해 본 다음, 5-4로 읽어 보기.
 
 ### 5-3. 실행해 보기
 ```bash
@@ -545,7 +258,7 @@ python -m uvicorn app.server:app --host 0.0.0.0 --port 8000
 | | 할 일 | 완료 기준 |
 |---|---|---|
 | 둘 다 | 5장 따라 하기, A/B 정하기, Git 브랜치 만들기 (8장) | 둘 다 휴대폰에서 화면이 열림 |
-| 둘 다 | 시작 코드 커밋 (한 명이 PR, 한 명이 확인) | main에 `dev/app/` 들어감 |
+| 둘 다 | 시작 코드 읽기 (5-4 질문에 답하기), 연습 PR 하나씩 (예: 화면 제목 바꾸기) | 둘 다 PR을 올리고 상대 PR을 승인해 봄 |
 | B | 메인 화면 레이아웃 스케치 (종이나 Figma 아무거나) | 단톡방에 공유 |
 
 ### 6주차 (마감 11/12 목)
@@ -579,15 +292,15 @@ python -m uvicorn app.server:app --host 0.0.0.0 --port 8000
 
 ## 7. 진짜 로봇과 연결 (팀장 작업, 알아만 두기)
 
-- 팀장이 `RealCleaner`를 만든다: `FakeCleaner`와 **메서드 이름·`status()` 형식이 똑같고**, 안에서만 진짜 로봇·카메라·AI를 쓴다
-- `server.py`에서 `cleaner = FakeCleaner()` 한 줄만 `RealCleaner()`로 바뀐다
+- `dev/app/real_cleaner.py`에 **RealCleaner 초안이 이미 있다**. `FakeCleaner`와 메서드 이름·`status()` 형식이 똑같고, 안에서 `scripts/run_auto.py`의 탐지·정책·수거함 이동을 그대로 쓴다
+- 팀장 노트북에서 `$env:ROBOT="real"`로 서버를 켜면 `server.py`가 FakeCleaner 대신 RealCleaner를 쓴다. 화면 코드는 그대로
+- 로봇 없이 점검: `python -m app.check_real` (녹화 화면 + 진짜 AI로 시작 → 끝, 중지, 비상정지 흐름 확인)
+- 진짜 로봇에서 "성공"은 **놓은 뒤 home에서 head 카메라로 다시 봤을 때 그 물건이 원래 자리에 없으면** 성공 (가짜에서는 70% 확률)
 - 그래서 너희가 지킬 것:
   - 화면(B)은 `/api/...`와 `/video/...`만 쓴다 (`cleaner.py` 내부를 직접 기대하지 않기)
-  - `status()`에 필드를 **추가**하는 건 괜찮지만, 있는 필드 이름·뜻을 바꾸면 팀장에게 알리기
+  - `status()`에 필드를 **추가**하는 건 괜찮지만, 있는 필드 이름·뜻을 바꾸면 팀장에게 알리기 (RealCleaner도 같이 고쳐야 함)
+  - A가 FakeCleaner에 새 기능(기록 저장, 설정 검사 등)을 넣으면, 진짜 로봇에도 필요한지 팀장에게 알려주기
   - **카메라를 화면 쪽에서 직접 열지 않는다**: 윈도우에서 카메라는 한 프로그램만 열 수 있어서, 다른 게 열고 있으면 로봇이 못 본다 (실제로 겪은 문제)
-- 진짜 로봇에서 "성공"은 놓은 뒤 head 카메라로 다시 봤을 때 그 물건이 없어졌는지로 판단할 예정 (가짜에서는 70% 확률)
-
----
 
 ## 8. Git 협업 (처음이면 이대로)
 
@@ -604,7 +317,7 @@ git commit -m "기록 저장 추가"
 git push -u origin ui/server
 ```
 - GitHub에서 **Pull Request** 만들기 → 상대가 "Files changed" 보고 승인 → 머지
-- **커밋하면 안 되는 것**: `outputs/` (영상, 기록), `.venv-ui/`, `configs/app_settings.json`(개인 설정). `.gitignore`에 `.venv-ui/`, `dev/configs/app_settings.json` 추가하는 것도 첫 PR에 넣기
+- **커밋하면 안 되는 것**: `outputs/` (영상, 기록), `.venv-ui/`, `configs/app_settings.json`(개인 설정) — 셋 다 `.gitignore`에 이미 들어 있음
 - 커밋 전 확인: 서버 켜서 [정리 시작] → 끝까지 한 바퀴
 
 ---

@@ -54,6 +54,7 @@ LIFT_ACTIONS = 30  # 쥔 뒤 정책을 더 돌리는 스텝 수 (= 시연 1초 �
 SEND_HZ = 60  # 모터에 보내는 빈도 (텔레옵과 같게). 정책 스텝 사이는 시간 기준 직선 보간
 FPS, CONF, IMGSZ = 30, 0.3, 640  # head 첫 프레임 기준 물병 탐지: 960/0.5 → 18/31, 640/0.3 → 30/31 (새 카메라 구도 0/19 → 11/19)
 PAN_OFFSET = {}  # 클래스별 shoulder_pan 보정 (실물로 맞춤). 예전 tape 2.0은 v1 30k 기준이라 v2에서 뺌. 체크포인트 바꾸면 다시 맞출 것
+ESTOP = threading.Event()  # 웹 UI(app/real_cleaner.py)의 비상정지: 정책 루프와 move_to가 즉시 멈춤. 터미널 실행에서는 안 씀
 BIN_X = 100  # head 640x480에서 수거함 구역 테이프 선의 x(약 88~115, 살짝 기울어짐). 박스 중심이 이보다 왼쪽이면 이미 정리된 물건 → 무시. 카메라 옮기면 다시 잴 것
 
 
@@ -67,13 +68,19 @@ def load_policy(path, device, n_action_steps):
     return policy, pre, post
 
 
+def detect_all(model, head_rgb, names):
+    """head 한 장 → 정책이 있는 클래스의 [(이름, 신뢰도, (x1, y1, x2, y2))]. 수거함 구역(박스 중심 x < BIN_X)은 제외"""
+    img = cv2.cvtColor(head_rgb, cv2.COLOR_RGB2BGR)  # lerobot은 RGB, YOLO는 BGR
+    boxes = model.predict(img, imgsz=IMGSZ, conf=CONF, verbose=False)[0].boxes  # imgsz 생략하면 학습값 960이 쓰임
+    return [(model.names[int(c)], float(p), tuple(int(v) for v in xyxy))
+            for c, p, xyxy in zip(boxes.cls, boxes.conf, boxes.xyxy)
+            if model.names[int(c)] in names and (xyxy[0] + xyxy[2]) / 2 >= BIN_X]
+
+
 def detect(model, robot, names):
     """head 카메라 한 장으로 탐지 → 정책이 있는 클래스 중 신뢰도 최고 (이름, 신뢰도) 또는 None"""
-    img = cv2.cvtColor(robot.get_observation()["head"], cv2.COLOR_RGB2BGR)  # lerobot은 RGB, YOLO는 BGR
-    boxes = model.predict(img, imgsz=IMGSZ, conf=CONF, verbose=False)[0].boxes  # imgsz 생략하면 학습값 960이 쓰임
-    found = [(model.names[int(c)], float(p)) for c, p, (x, _, _, _) in zip(boxes.cls, boxes.conf, boxes.xywh)
-             if model.names[int(c)] in names and x >= BIN_X]  # x = 박스 중심
-    return max(found, key=lambda x: x[1]) if found else None
+    found = detect_all(model, robot.get_observation()["head"], names)
+    return max(found, key=lambda x: x[1])[:2] if found else None
 
 
 def key():
@@ -104,9 +111,10 @@ def observe(robot, lock):
     return obs
 
 
-def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_offset):
+def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_offset, poll_key=key):
     """정책으로 seconds초 구동. 스페이스로 조기 종료. 물체를 쥐면 LIFT_ACTIONS만큼 더 돌려 들어올린 뒤 끝냄.
     반환: (눌린 키 ' '/'q'/None, 쥐었으면 그때 명령하던 그리퍼 값 아니면 None)
+    poll_key: 키 입력 대신 쓸 함수 (웹 UI가 ' '/'q'를 넘김). ESTOP이 켜지면 바로 멈춤
     정책은 fps로 다음 목표만 계산하고, 별도 스레드가 SEND_HZ로 시간에 맞춰 보간해서 계속 보냄
     → 관측·추론 시간이 들쭉날쭉해도 모터 명령 간격은 일정 (텔레옵처럼)"""
     policy.reset(); pre.reset(); post.reset()
@@ -133,7 +141,8 @@ def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_off
     t0, steps, k, calc = time.perf_counter(), 0, None, []
     g, hold, lift = [], None, 0  # 그리퍼 관측 기록, 쥔 순간의 그리퍼 명령값, 쥔 뒤 남은 들어올리기 스텝
     try:
-        while time.perf_counter() - t0 < seconds and k not in (" ", "q") and not (hold is not None and lift <= 0):
+        while (time.perf_counter() - t0 < seconds and k not in (" ", "q") and not (hold is not None and lift <= 0)
+               and not ESTOP.is_set()):
             t = time.perf_counter()
             obs = observe(robot, lock)
             g.append(obs["gripper.pos"])
@@ -154,7 +163,7 @@ def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_off
                 print("그리퍼를 다시 벌림 → 쥠 취소, 정책 계속")
             elif hold is not None:
                 hold, lift = act["gripper.pos"], lift - 1  # 들어올리는 동안도 정책이 그리퍼를 더 조일 수 있음 → 마지막 명령값을 유지
-            steps, k = steps + 1, key()
+            steps, k = steps + 1, poll_key()
             time.sleep(max(0.0, 1 / fps - (time.perf_counter() - t)))
     finally:
         stop.set()
@@ -170,6 +179,8 @@ def move_to(robot, target, seconds):
     start = {k: v for k, v in robot.get_observation().items() if k.endswith(".pos")}
     n = max(1, int(seconds * FPS))
     for i in range(1, n + 1):
+        if ESTOP.is_set():
+            return
         robot.send_action({k: start[k] + (target[k] - start[k]) * i / n for k in target})
         time.sleep(1 / FPS)
 

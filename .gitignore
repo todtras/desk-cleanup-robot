@@ -13,3 +13,5 @@ dev/runs/
 *.pt
 dev/results.csv
 ~$*
+dev/.venv-ui/
+dev/configs/app_settings.json

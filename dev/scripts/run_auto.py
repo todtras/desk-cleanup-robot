@@ -6,17 +6,19 @@
 - --fps: 정책 루프 속도. 학습 데이터는 30Hz라 15면 같은 동작을 절반 속도로 (처음 시험할 때 추천)
 - 정책 실행 중 스페이스 = 지금 놓기(남은 시간 건너뜀), q = 이번 시도만 중단(그리퍼 열고 home → 다음 시도)
 - 전체 종료 = 성공 질문에 q, 급하면 Ctrl+C
-- 시도마다 성공 여부(y/n)를 입력받아 outputs/run_log.csv에 기록, 클래스별 성공률 출력 (로봇 없이 보기: --stats)
+- 시도마다 성공 여부(y/n)와 실패 이유(번호 또는 직접 입력)를 입력받아 outputs/run_log.csv에 기록, 클래스별 성공률 출력 (로봇 없이 보기: --stats)
 - 카메라 번호는 record_pick.yaml 그대로 씀 (실행마다 head/wrist가 바뀔 수 있으니 시작 화면 확인)
 """
 import argparse
 import csv
 import ctypes
 import json
+import logging
 import msvcrt
 import os
 import threading
 import time
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -41,13 +43,17 @@ os.chdir(Path(__file__).resolve().parent.parent)  # 아래 상대경로는 dev �
 CFG =Path("configs/robot/record_pick.yaml")
 POSES = json.loads(Path("configs/robot/poses.json").read_text(encoding="utf-8"))
 LOG = Path("outputs/run_log.csv")
-CKPT = "outputs/train/act_pick_{}/checkpoints/last/pretrained_model"  # lerobot-train --output_dir 기준
-PLAN = {"tape": "office", "bottle": "trash", "pen": "pen"}  # YOLO 클래스 → 수거함 (정책은 act_pick_<클래스>)
+REASONS = {"1": "탐지 실패", "2": "빗나감-왼쪽", "3": "빗나감-오른쪽", "4": "빗나감-앞뒤",
+           "5": "쥐었다 놓침", "6": "쥠 감지 안 됨", "7": "수거함 잘못", "8": "멈춤/시간 초과"}
+# 빗나감 방향 = 그리퍼가 물체보다 어느 쪽으로 갔나, 로봇 기준 (로봇 왼쪽 = head 화면 오른쪽). 앞뒤 = 로봇에서 멀게/가깝게
+REASONS_HELP = " ".join(f"{k}={v}" for k, v in REASONS.items())
+CKPT = "outputs/train/act_pick_{}_v2/checkpoints/{}/pretrained_model"  # v2 = 2026-10-30 새 환경 데이터. 서버에서 scp로 받은 스텝 폴더
+PLAN = {"tape": "office", "bottle": "trash", "pen": "pen", "eraser": "pen", "paper": "trash"}  # YOLO 클래스 → 수거함 (정책은 act_pick_<클래스>)
 EMPTY_GRIP = 2.5  # 그리퍼가 이보다 닫혀 있으면 빈손 (펜을 쥐어도 3.9). 그리퍼 다시 캘리브레이션하면 다시 볼 것
 LIFT_ACTIONS = 30  # 쥔 뒤 정책을 더 돌리는 스텝 수 (= 시연 1초 분량. 시연에서 쥔 직후 들어올리는 동작)
 SEND_HZ = 60  # 모터에 보내는 빈도 (텔레옵과 같게). 정책 스텝 사이는 시간 기준 직선 보간
 FPS, CONF, IMGSZ = 30, 0.3, 640  # head 첫 프레임 기준 물병 탐지: 960/0.5 → 18/31, 640/0.3 → 30/31 (새 카메라 구도 0/19 → 11/19)
-PAN_OFFSET = {"tape": 2.0}  # 클래스별 shoulder_pan 보정 (실물로 맞춤). tape: 30k 체크포인트 기준 2026-10-23. 체크포인트 바꾸면 다시 맞출 것
+PAN_OFFSET = {}  # 클래스별 shoulder_pan 보정 (실물로 맞춤). 예전 tape 2.0은 v1 30k 기준이라 v2에서 뺌. 체크포인트 바꾸면 다시 맞출 것
 BIN_X = 100  # head 640x480에서 수거함 구역 테이프 선의 x(약 88~115, 살짝 기울어짐). 박스 중심이 이보다 왼쪽이면 이미 정리된 물건 → 무시. 카메라 옮기면 다시 잴 것
 
 
@@ -208,6 +214,7 @@ def file_rates():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--yolo", default="models/best.pt")
+    ap.add_argument("--step", default="010000", help="체크포인트 스텝 폴더 (010000/020000/030000)")
     ap.add_argument("--stats", action="store_true", help="로봇 없이 run_log.csv 성공률만 출력")
     ap.add_argument("--seconds", type=float, default=20, help="정책 최대 실행 시간 (녹화 episode_time_s와 비슷하게)")
     ap.add_argument("--device", default="cpu")
@@ -218,15 +225,23 @@ def main():
     args = ap.parse_args()
     if args.stats:
         print(f"{LOG}: {fmt(file_rates())}")
+        if LOG.exists():
+            with LOG.open(encoding="utf-8-sig") as f:
+                fails = Counter((r["class"], r.get("reason") or "?") for r in csv.DictReader(f) if r["success"] == "n")
+            for (c, why), n in sorted(fails.items()):
+                print(f"  실패 {c} - {why}: {n}")
         return
 
     policies = {}
+    logging.disable(logging.WARNING)  # 체크포인트마다 "cuda 없음 → cpu" 경고 2줄씩 (무해)
+    print(f"정책 불러오는 중: {', '.join(PLAN)}")
     for name in PLAN:
-        path = CKPT.format(name)
+        path = CKPT.format(name, args.step)
         if Path(path).exists():
             policies[name] = load_policy(path, args.device, args.n_action_steps)
         else:
             print(f"[건너뜀] {name}: 체크포인트 없음 ({path})")
+    logging.disable(logging.NOTSET)
     if not policies:
         raise SystemExit("실행할 정책이 없음. lerobot-train 결과를 outputs/train/ 아래에 두기")
 
@@ -243,7 +258,7 @@ def main():
         with LOG.open("a", newline="", encoding="utf-8-sig") as f:
             log = csv.writer(f)
             if new_log:
-                log.writerow(["time", "class", "conf", "seconds", "success"])
+                log.writerow(["time", "class", "conf", "seconds", "success", "reason"])
             session = []  # 이번 실행 기록 (class, y/n)
             while True:
                 det = detect(model, robot, policies)
@@ -262,8 +277,12 @@ def main():
                     release_and_home(robot, PLAN[name])
                 ok = input("성공? (y/n, q=종료): ").strip().lower()
                 if ok in ("y", "n"):
+                    reason = ""
+                    if ok == "n":
+                        r = input(f"실패 이유 번호 또는 직접 입력 ({REASONS_HELP}) [빗나감 = 그리퍼가 물체보다 로봇 기준 어느 쪽]: ").strip()
+                        reason = REASONS.get(r, r)
                     log.writerow([datetime.now().isoformat(timespec="seconds"), name, f"{conf:.2f}",
-                                  f"{time.perf_counter() - t0:.1f}", ok])
+                                  f"{time.perf_counter() - t0:.1f}", ok, reason])
                     f.flush()
                     session.append((name, ok))
                     print(f"성공률  이번 실행: {fmt(rates(session))}  |  파일 전체: {fmt(file_rates())}")

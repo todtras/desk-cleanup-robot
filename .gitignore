@@ -12,3 +12,4 @@ dev/datasets/**/images/
 dev/runs/
 *.pt
 dev/results.csv
+~$*

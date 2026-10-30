@@ -6,9 +6,9 @@ robot:
   type: so101_follower
   port: COM4
   id: fd_follower
-  cameras:  # 2026-10-23 pm: 2=head, 0=wrist, 1=laptop webcam (indices change between runs/replugs!). backend 700=DSHOW (same numbering as dashboard)
-    head: {type: opencv, index_or_path: 2, width: 640, height: 480, fps: 30, backend: 700}
-    wrist: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30, backend: 700}
+  cameras:  # 2026-10-30: 1=head, 2=wrist (indices change between runs/replugs!). backend 700=DSHOW (same numbering as dashboard)
+    head: {type: opencv, index_or_path: 1, width: 640, height: 480, fps: 30, backend: 700, fourcc: MJPG}
+    wrist: {type: opencv, index_or_path: 2, width: 640, height: 480, fps: 30, backend: 700, fourcc: MJPG}
 teleop:
   type: so101_leader
   port: COM3

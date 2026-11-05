@@ -4,6 +4,7 @@
 3) 저장 위치 기본값 outputs/datasets/<이름> (lerobot 기본은 ~/.cache)
 4) 녹화가 끝나도 끊김 없이 Ctrl+C 전까지 텔레옵 유지 (연결도 그대로 → 끝날 때 그리퍼 과부하 방지)
 5) 에피소드 저장 중에 누른 → 무시 (다음 에피소드가 0프레임으로 끝나 녹화가 멈추던 문제)
+6) --coverage: 기존 시연 물체 위치를 실시간 head 화면에 겹쳐 표시 (scripts/demo_map.py). --dataset.repo_id를 명령줄로 줄 것
 사용 (dev 폴더에서): python scripts/record.py --config_path=configs/robot/record_pick.yaml [lerobot-record 인자 그대로]
 """
 import subprocess
@@ -61,6 +62,12 @@ if not any(a.startswith("--dataset.root") for a in sys.argv):
     if repo:
         sys.argv.append(f"--dataset.root=outputs/datasets/{repo.split('/')[-1]}")
 
+_live = None
+if "--coverage" in sys.argv:
+    sys.argv.remove("--coverage")  # lerobot 인자가 아님
+    from demo_map import Live
+    _live = Live(next(a.split("=", 1)[1] for a in sys.argv if a.startswith("--dataset.repo_id=")).split("/")[-1])
+
 _robots, _teleops, _threads = [], [], []
 _stop = threading.Event()
 _orig_make_robot = rec.make_robot_from_config
@@ -70,6 +77,8 @@ _orig_log_say = rec.log_say
 
 def make_robot_from_config(cfg):
     _robots.append(_orig_make_robot(cfg))  # 녹화 끝난 뒤 텔레옵을 이어가려고 잡아둠
+    if _live:
+        _live.start(_robots[-1])
     return _robots[-1]
 
 
@@ -91,6 +100,10 @@ def log_say(text, *args, **kwargs):
       연결도 끊음 → 그동안 그리퍼가 쥔 채로 멈춰 과부하(6번 모터 응답 없음)로 재연결 실패하던 문제"""
     if text.startswith(("Recording episode", "Reset the environment")) and _events:
         _events[-1]["exit_early"] = False
+    if _live and text.startswith("Recording episode"):
+        _live.mark_next = True
+    if _live and text == "Re-record episode":
+        _live.undo()
     if text == "Stop recording" and _robots and _teleops and _robots[-1].is_connected and _teleops[-1].is_connected:
         robot, teleop = _robots[-1], _teleops[-1]
         for dev in (robot, teleop):  # lerobot이 끊지 못하게. 진짜 끊기는 Ctrl+C 뒤에

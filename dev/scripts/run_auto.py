@@ -50,6 +50,18 @@ REASONS = {"1": "탐지 실패", "2": "빗나감-왼쪽", "3": "빗나감-오른
 # 빗나감 방향 = 그리퍼가 물체보다 어느 쪽으로 갔나, 로봇 기준 (로봇 왼쪽 = head 화면 오른쪽). 앞뒤 = 로봇에서 멀게/가깝게
 REASONS_HELP = " ".join(f"{k}={v}" for k, v in REASONS.items())
 CKPT = "outputs/train/act_pick_{}_v2/checkpoints/{}/pretrained_model"  # v2 = 2026-10-30 새 환경 데이터. 서버에서 scp로 받은 스텝 폴더
+V3 = {"eraser", "paper"}  # v3(약한 위치 보강 녹화)가 있는 물체. --v3로 선택
+
+
+def ckpt_path(name, step, v3=False):
+    return CKPT.format(name, step).replace("_v2/", "_v3/") if v3 and name in V3 else CKPT.format(name, step)
+
+
+def step_label(name, step, v3=False):
+    """기록·보정표의 스텝 이름. v3는 'v3-050000'으로 구분 (v2 스텝용 보정값이 적용되거나 기록이 섞이지 않게)"""
+    return f"v3-{step}" if v3 and name in V3 else step
+
+
 PLAN = {"tape": "office", "bottle": "trash", "pen": "pen", "eraser": "pen", "paper": "trash"}  # YOLO 클래스 → 수거함 (정책은 act_pick_<클래스>)
 EMPTY_GRIP = 2.5  # 그리퍼가 이보다 닫혀 있으면 빈손 (펜을 쥐어도 3.9). 그리퍼 다시 캘리브레이션하면 다시 볼 것
 LIFT_ACTIONS = 30  # 쥔 뒤 정책을 더 돌리는 스텝 수 (= 시연 1초 분량. 시연에서 쥔 직후 들어올리는 동작)
@@ -291,7 +303,8 @@ def fmt(r):
 
 def tag(r):
     """기록 한 줄 → 'bottle 보정O' 처럼 물체 + 보정 여부 (예전 기록엔 fix 칸이 없어 물체만)"""
-    return r["class"] + {"on": " 보정O", "off": " 보정X"}.get(r.get("fix") or "", "")
+    step = f" {r['step']}" if r.get("step") else ""  # 체크포인트끼리 비교할 때 성공률이 섞이지 않게
+    return r["class"] + step + {"on": " 보정O", "off": " 보정X"}.get(r.get("fix") or "", "")
 
 
 def file_rates():
@@ -304,7 +317,8 @@ def file_rates():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--yolo", default="models/best.pt")
-    ap.add_argument("--step", default="010000", help="체크포인트 스텝 폴더 (010000/020000/030000)")
+    ap.add_argument("--step", default="010000", help="체크포인트 스텝 폴더 (010000 ~ 100000)")
+    ap.add_argument("--v3", action="store_true", help="지우개·종이는 v3 체크포인트 사용 (나머지 물체는 v2)")
     ap.add_argument("--stats", action="store_true", help="로봇 없이 run_log.csv 성공률만 출력")
     ap.add_argument("--seconds", type=float, default=20, help="정책 최대 실행 시간 (녹화 episode_time_s와 비슷하게)")
     ap.add_argument("--device", default="cpu")
@@ -330,7 +344,7 @@ def main():
     logging.disable(logging.WARNING)  # 체크포인트마다 "cuda 없음 → cpu" 경고 2줄씩 (무해)
     print(f"정책 불러오는 중: {', '.join(PLAN)}")
     for name in PLAN:
-        path = CKPT.format(name, args.step)
+        path = ckpt_path(name, args.step, args.v3)
         if Path(path).exists():
             policies[name] = load_policy(path, args.device, args.n_action_steps)
         else:
@@ -362,11 +376,12 @@ def main():
                     print("탐지된 물체 없음 → 종료. head 화면: outputs/last_head.jpg (책상이 안 보이면 카메라 번호 확인)")
                     break
                 name, conf, box = det
-                pan = PAN_OFFSET.get(name, 0.0) + (0.0 if args.no_pan_fit else args.pan_scale * pan_fix(name, args.step, box))
+                step = step_label(name, args.step, args.v3)
+                pan = PAN_OFFSET.get(name, 0.0) + (0.0 if args.no_pan_fit else args.pan_scale * pan_fix(name, step, box))
                 if args.pan_offset is not None:
                     pan = args.pan_offset
-                reach = reach_px(name, args.step, box) if args.reach_px is None else args.reach_px
-                print(f"\n{name} ({conf:.2f}, x={(box[0] + box[2]) // 2}, y={(box[1] + box[3]) // 2}) → act_pick_{name} 실행, "
+                reach = reach_px(name, step, box) if args.reach_px is None else args.reach_px
+                print(f"\n{name} ({conf:.2f}, x={(box[0] + box[2]) // 2}, y={(box[1] + box[3]) // 2}) → act_pick_{name} {step} 실행, "
                       f"pan 보정 {pan:+.1f}도, 거리 보정 {reach:+.0f}px. 스페이스=지금 놓기, q=이번 시도 중단")
                 t0 = time.perf_counter()
                 GRASP_POSE.clear()
@@ -375,7 +390,7 @@ def main():
                 new = not JOINT_LOG.exists()
                 with JOINT_LOG.open("a", encoding="utf-8") as jf:  # 쥔 순간 관절 (쥠 감지 못 하면 빈칸) — 거리 보정 맞출 때 참고
                     jf.write(("time,class,step,x,y,pan_fix,reach_px,pan,lift,elbow,wflex,held\n" if new else "") +
-                             f"{datetime.now():%H:%M:%S},{name},{args.step},{(box[0] + box[2]) // 2},{(box[1] + box[3]) // 2},"
+                             f"{datetime.now():%H:%M:%S},{name},{step},{(box[0] + box[2]) // 2},{(box[1] + box[3]) // 2},"
                              f"{pan:.2f},{reach:.0f}," + ",".join(f"{GRASP_POSE[m]:.1f}" if m in GRASP_POSE else ""
                              for m in ("shoulder_pan.pos", "shoulder_lift.pos", "elbow_flex.pos", "wrist_flex.pos")) +
                              f",{hold is not None}\n")
@@ -387,7 +402,7 @@ def main():
                     new = not PAN_LOG.exists()
                     with PAN_LOG.open("a", encoding="utf-8") as pf:
                         pf.write(("time,class,step,x,y,pan_fix,end_pan,demo_pan,held\n" if new else "") +
-                                 f"{datetime.now():%H:%M:%S},{name},{args.step},{cx:.0f},{by},{pan:.2f},{end:.2f},{want:.2f},{hold is not None}\n")
+                                 f"{datetime.now():%H:%M:%S},{name},{step},{cx:.0f},{by},{pan:.2f},{end:.2f},{want:.2f},{hold is not None}\n")
                 if hold is not None:
                     carry_and_drop(robot, PLAN[name], hold)
                 else:  # 못 쥠 / 스페이스 / q / 시간 초과 → 그 자리에서 그리퍼 열고 home
@@ -400,13 +415,13 @@ def main():
                         reason = REASONS.get(r, r)
                     fix = "off" if abs(pan) < 1e-6 and abs(reach) < 1e-6 else "on"  # 실제로 더한 보정 기준
                     row = [datetime.now().isoformat(timespec="seconds"), name, f"{conf:.2f}", f"{time.perf_counter() - t0:.1f}",
-                           ok, reason, args.step, fix, f"{pan:.2f}", f"{reach:.1f}", (box[0] + box[2]) // 2, (box[1] + box[3]) // 2]
+                           ok, reason, step, fix, f"{pan:.2f}", f"{reach:.1f}", (box[0] + box[2]) // 2, (box[1] + box[3]) // 2]
                     log.writerow(row)
                     f.flush()
-                    session.append((tag({"class": name, "fix": fix}), ok))
+                    session.append((tag({"class": name, "step": step, "fix": fix}), ok))
                     print(f"성공률  이번 실행: {fmt(rates(session))}  |  파일 전체: {fmt(file_rates())}")
                     if args.calib:
-                        calib_input(name, args.step, box)
+                        calib_input(name, step, box)
                 if ok == "q":  # 정책 중 q는 이번 시도만 끊음 (위에서 이미 home)
                     break
     finally:

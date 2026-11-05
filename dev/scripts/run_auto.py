@@ -9,6 +9,9 @@
 - 전체 종료 = 성공 질문에 q, 급하면 Ctrl+C
 - 시도마다 성공 여부(y/n)와 실패 이유(번호 또는 직접 입력)를 입력받아 outputs/run_log.csv에 기록, 클래스별 성공률 출력 (로봇 없이 보기: --stats)
 - 카메라 번호는 record_pick.yaml 그대로 씀 (실행마다 head/wrist가 바뀔 수 있으니 시작 화면 확인)
+- --collect: 데이터 모으기 (리더 암 연결 필요). 기록은 outputs/run_log_collect.csv (기준 성공률과 섞이지 않음)
+  · 빗나가려 하면 i → 팔 멈춤 → 리더를 팔로워 자세에 맞춤 (차이 표시) → i → 직접 집어 들어 올림 → i → 저장 여부. 넘겨받은 구간만 pick_<물체>_dagger에 저장
+  · 정책이 혼자 깔끔하게 성공하면 쥐고 들어 올릴 때까지를 pick_<물체>_success에 저장
 """
 import argparse
 import csv
@@ -30,6 +33,7 @@ import torch
 import yaml
 from lerobot.cameras import opencv  # noqa: F401  (opencv 카메라 타입 등록)
 from lerobot.configs.policies import PreTrainedConfig
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.policies.act.modeling_act import ACTPolicy
 from lerobot.policies.factory import make_pre_post_processors
@@ -45,6 +49,11 @@ os.chdir(Path(__file__).resolve().parent.parent)  # 아래 상대경로는 dev �
 CFG =Path("configs/robot/record_pick.yaml")
 POSES = json.loads(Path("configs/robot/poses.json").read_text(encoding="utf-8"))
 LOG = Path("outputs/run_log.csv")
+COLLECT_LOG = Path("outputs/run_log_collect.csv")
+DATA_ROOT = Path("outputs/datasets")
+INTERVENE = ("i", "I", "ㅑ")  # 교정 키 (한글 입력 상태면 ㅑ로 들어옴)
+ALIGN_MAX = 8.0  # 리더-팔로워 차이가 이 안이어야 넘겨받음. 쥔 물체를 떨어뜨리지 않을 정도로. 실물 보고 조정
+TAKEOVER_FPS, TAKEOVER_MAX_S = 30, 40  # 시연과 같은 30Hz. 상한은 메모리 보호용 (초당 약 55MB)
 REASONS = {"1": "탐지 실패", "2": "빗나감-왼쪽", "3": "빗나감-오른쪽", "4": "빗나감-앞뒤", "9": "너무 뻗음(앞)", "0": "덜 뻗음(뒤)",
            "5": "쥐었다 놓침", "6": "쥠 감지 안 됨", "7": "수거함 잘못", "8": "멈춤/시간 초과"}
 # 빗나감 방향 = 그리퍼가 물체보다 어느 쪽으로 갔나, 로봇 기준 (로봇 왼쪽 = head 화면 오른쪽). 앞뒤 = 로봇에서 멀게/가깝게
@@ -193,12 +202,14 @@ def observe(robot, lock):
     return obs
 
 
-def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_offset, poll_key=key, extra=None):
+def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_offset, poll_key=key, extra=None, rec=None):
     """정책으로 seconds초 구동. 스페이스로 조기 종료. 물체를 쥐면 LIFT_ACTIONS만큼 더 돌려 들어올린 뒤 끝냄.
     반환: (눌린 키 ' '/'q'/None, 쥐었으면 그때 명령하던 그리퍼 값 아니면 None)
     poll_key: 키 입력 대신 쓸 함수 (웹 UI가 ' '/'q'를 넘김). ESTOP이 켜지면 바로 멈춤
     정책은 fps로 다음 목표만 계산하고, 별도 스레드가 SEND_HZ로 시간에 맞춰 보간해서 계속 보냄
-    → 관측·추론 시간이 들쭉날쭉해도 모터 명령 간격은 일정 (텔레옵처럼)"""
+    → 관측·추론 시간이 들쭉날쭉해도 모터 명령 간격은 일정 (텔레옵처럼)
+    rec: 리스트를 주면 스텝마다 (관측, 보낸 명령)을 쌓고, 교정 키로도 멈춤"""
+    stops = (" ", "q") + (INTERVENE if rec is not None else ())
     policy.reset(); pre.reset(); post.reset()
     lock, stop = threading.Lock(), threading.Event()  # 같은 시리얼 버스를 두 스레드가 씀 → 한 번에 하나만
     obs = observe(robot, lock)
@@ -223,7 +234,7 @@ def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_off
     t0, steps, k, calc = time.perf_counter(), 0, None, []
     g, hold, lift = [], None, 0  # 그리퍼 관측 기록, 쥔 순간의 그리퍼 명령값, 쥔 뒤 남은 들어올리기 스텝
     try:
-        while (time.perf_counter() - t0 < seconds and k not in (" ", "q") and not (hold is not None and lift <= 0)
+        while (time.perf_counter() - t0 < seconds and k not in stops and not (hold is not None and lift <= 0)
                and not ESTOP.is_set()):
             t = time.perf_counter()
             obs = observe(robot, lock)
@@ -238,6 +249,8 @@ def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_off
             act = {m: last[m] + smooth * (act[m] - last[m]) for m in act}  # 지수 평활: 덜 학습된 ACT의 들쭉날쭉한 예측을 고르게
             tn = time.perf_counter()
             seg[0] = (interp(tn), act, tn)  # 지금 보내던 위치에서 새 목표로 (같은 시각 기준이라 뒤로 튀지 않음)
+            if rec is not None:
+                rec.append((obs, act))
             calc.append(time.perf_counter() - t)
             if hold is None and grasped(g, fps):
                 hold, lift, grip0 = act["gripper.pos"], LIFT_ACTIONS, g[-1]
@@ -258,6 +271,75 @@ def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_off
     print(f"정책 루프 {steps / (time.perf_counter() - t0):.0f}Hz (목표 {fps}), 스텝 계산 평균 {1000 * sum(calc) / max(1, len(calc)):.0f}ms"
           f" / 최대 {1000 * max(calc, default=0):.0f}ms / 100ms 넘은 스텝 {sum(c > 0.1 for c in calc)}개")
     return k, hold
+
+
+def takeover(robot, teleop, features, poll_key=key):
+    """팔은 멈춘 채 리더를 맞추게 한 뒤 넘겨받아 30Hz로 녹화. 반환: ([(관측, 리더 명령)], 마지막 그리퍼 명령), q면 (None, None)"""
+    names, lock = features[ACTION]["names"], threading.Lock()
+    print("팔 멈춤. 리더를 팔로워 자세에 맞추고 i (q=이번 시도 버리기)")
+    while True:
+        now, lead = observe(robot, lock), teleop.get_action()
+        diff = {m: lead[m] - now[m] for m in names}
+        worst = max(abs(v) for v in diff.values())
+        print("\r  리더-팔로워: " + " ".join(f"{m.split('.')[0][:5]} {v:+5.1f}" for m, v in diff.items()) + f"  최대 {worst:4.1f} ", end="", flush=True)
+        k = poll_key()
+        if k == "q" or ESTOP.is_set():
+            print()
+            return None, None
+        if k in INTERVENE:
+            if worst <= ALIGN_MAX:
+                break
+            print(f"\n  차이가 {ALIGN_MAX:.0f}보다 큼 → 더 맞추고 다시 i")
+        time.sleep(0.05)
+    start = {m: now[m] for m in names}
+    for i in range(1, 16):  # 남은 차이를 0.5초에 걸쳐 없앰 (팔이 튀지 않게). 이 구간은 저장 안 함
+        lead = teleop.get_action()
+        robot.send_action({m: start[m] + (lead[m] - start[m]) * i / 15 for m in names})
+        time.sleep(1 / TAKEOVER_FPS)
+    print(f"\n녹화 중: 집어서 들어 올린 뒤 i (q=버리기, 최대 {TAKEOVER_MAX_S}초)")
+    frames, t0, act = [], time.perf_counter(), lead
+    while time.perf_counter() - t0 < TAKEOVER_MAX_S and not ESTOP.is_set():
+        t = time.perf_counter()
+        obs, act = observe(robot, lock), teleop.get_action()
+        robot.send_action(act)
+        frames.append((obs, act))
+        k = poll_key()
+        if k == "q":
+            return None, None
+        if k in INTERVENE:
+            break
+        time.sleep(max(0.0, 1 / TAKEOVER_FPS - (time.perf_counter() - t)))
+    hz = len(frames) / (time.perf_counter() - t0)
+    print(f"{len(frames)}프레임, {hz:.0f}Hz" + (" ← 30Hz보다 많이 느림. 동작 속도가 시연과 달라짐" if hz < 25 else ""))
+    return frames, act["gripper.pos"]
+
+
+class Collector:
+    """모은 시도를 물체·종류별 데이터셋에 에피소드로 저장. 기존 데이터셋은 건드리지 않음 → 재학습 때 합침"""
+
+    def __init__(self, features, robot_type, task):
+        self.features, self.robot_type, self.task, self.open = features, robot_type, task, {}
+
+    def _get(self, repo):
+        if repo not in self.open:
+            root = DATA_ROOT / repo
+            opts = dict(root=root, vcodec="h264", streaming_encoding=True)  # record_pick.yaml과 같은 인코딩
+            self.open[repo] = (LeRobotDataset(f"local/{repo}", **opts) if (root / "meta/info.json").exists() else
+                               LeRobotDataset.create(f"local/{repo}", FPS, self.features, robot_type=self.robot_type, **opts))
+        return self.open[repo]
+
+    def save(self, kind, name, frames):
+        repo = f"pick_{name}_{kind}"
+        ds = self._get(repo)
+        for obs, act in frames:
+            ds.add_frame({**build_dataset_frame(self.features, obs, OBS_STR),
+                          **build_dataset_frame(self.features, act, ACTION), "task": self.task})
+        ds.save_episode()
+        print(f"저장: {repo} {ds.num_episodes}개 ({len(frames)}프레임)")
+
+    def close(self):
+        for ds in self.open.values():
+            ds.finalize()  # 안 하면 parquet이 깨짐
 
 
 def move_to(robot, target, seconds):
@@ -315,6 +397,7 @@ def file_rates():
 
 
 def main():
+    global LOG
     ap = argparse.ArgumentParser()
     ap.add_argument("--yolo", default="models/best.pt")
     ap.add_argument("--step", default="010000", help="체크포인트 스텝 폴더 (010000 ~ 100000)")
@@ -330,7 +413,10 @@ def main():
     ap.add_argument("--reach_px", type=float, default=None, help="뻗는 거리 보정: 물체가 이만큼(px) 가까이 있는 것처럼 (+ = 덜 뻗음). 생략하면 보정표(calib.json)")
     ap.add_argument("--pan_scale", type=float, default=1.0, help="PAN_FIT 보정 배율. 실제 로봇 오차가 녹화로 잰 것보다 크면 키움 (outputs/pan_debug.csv 차이가 0에 가깝게)")
     ap.add_argument("--fps", type=float, default=FPS, help="정책 루프 속도. 낮추면 느리게 (시간도 그만큼 늘릴 것: --seconds)")
+    ap.add_argument("--collect", action="store_true", help="교정(i)·성공 시도 저장 모드. 맨 위 설명 참고")
     args = ap.parse_args()
+    if args.collect:
+        LOG = COLLECT_LOG
     if args.stats:
         print(f"{LOG}: {fmt(file_rates())}")
         if LOG.exists():
@@ -353,14 +439,22 @@ def main():
     if not policies:
         raise SystemExit("실행할 정책이 없음. lerobot-train 결과를 outputs/train/ 아래에 두기")
 
-    robot = make_robot_from_config(draccus.decode(RobotConfig, yaml.safe_load(CFG.read_text(encoding="utf-8"))["robot"]))
+    cfg = yaml.safe_load(CFG.read_text(encoding="utf-8"))
+    robot = make_robot_from_config(draccus.decode(RobotConfig, cfg["robot"]))
     features = {**hw_to_dataset_features(robot.observation_features, OBS_STR),
                 **hw_to_dataset_features(robot.action_features, ACTION)}
     model = YOLO(args.yolo)
     LOG.parent.mkdir(exist_ok=True)
     new_log = not LOG.exists()
+    teleop, collector = None, None
+    if args.collect:
+        from lerobot.teleoperators import TeleoperatorConfig, make_teleoperator_from_config, so_leader  # noqa: F401
+        teleop = make_teleoperator_from_config(draccus.decode(TeleoperatorConfig, cfg["teleop"]))
+        collector = Collector(features, robot.name, cfg["dataset"]["single_task"])
 
     robot.connect()
+    if teleop:
+        teleop.connect()
     try:
         move_to(robot, POSES["home"], 3.0)
         with LOG.open("a", newline="", encoding="utf-8-sig") as f:
@@ -385,8 +479,24 @@ def main():
                       f"pan 보정 {pan:+.1f}도, 거리 보정 {reach:+.0f}px. 스페이스=지금 놓기, q=이번 시도 중단")
                 t0 = time.perf_counter()
                 GRASP_POSE.clear()
-                _, hold = run_policy(robot, *policies[name], features, args.seconds, args.fps, args.smooth, pan,
-                                     extra=reach_fix(name, reach))
+                rec = [] if args.collect else None
+                k, hold = run_policy(robot, *policies[name], features, args.seconds, args.fps, args.smooth, pan,
+                                     extra=reach_fix(name, reach), rec=rec)
+                if args.collect and k in INTERVENE:
+                    frames, grip = takeover(robot, teleop, features)
+                    keep = bool(frames) and input("쥐고 들어 올렸나요? 저장하고 수거함으로 y / 버리기 n: ").strip().lower() == "y"
+                    if keep:
+                        collector.save("dagger", name, frames)
+                        carry_and_drop(robot, PLAN[name], grip)
+                    else:
+                        release_and_home(robot, PLAN[name])
+                    log.writerow([datetime.now().isoformat(timespec="seconds"), name, f"{conf:.2f}", f"{time.perf_counter() - t0:.1f}", "n",
+                                  "교정 저장" if keep else "교정 버림", step, "off", f"{pan:.2f}", f"{reach:.1f}",
+                                  (box[0] + box[2]) // 2, (box[1] + box[3]) // 2])
+                    f.flush()
+                    if input("다음 물체를 놓고 Enter (q=종료): ").strip().lower() == "q":
+                        break
+                    continue
                 new = not JOINT_LOG.exists()
                 with JOINT_LOG.open("a", encoding="utf-8") as jf:  # 쥔 순간 관절 (쥠 감지 못 하면 빈칸) — 거리 보정 맞출 때 참고
                     jf.write(("time,class,step,x,y,pan_fix,reach_px,pan,lift,elbow,wflex,held\n" if new else "") +
@@ -419,12 +529,21 @@ def main():
                     log.writerow(row)
                     f.flush()
                     session.append((tag({"class": name, "step": step, "fix": fix}), ok))
+                    if args.collect and ok == "y":
+                        if hold is None:
+                            print("쥠 감지가 안 되어 저장 안 함 (시도가 언제 끝났는지 알 수 없음)")
+                        elif input("깔끔한 성공인가요? 저장 Enter / 안 함 n: ").strip().lower() != "n":
+                            collector.save("success", name, rec)
                     print(f"성공률  이번 실행: {fmt(rates(session))}  |  파일 전체: {fmt(file_rates())}")
                     if args.calib:
                         calib_input(name, step, box)
                 if ok == "q":  # 정책 중 q는 이번 시도만 끊음 (위에서 이미 home)
                     break
     finally:
+        if collector:
+            collector.close()
+        if teleop:
+            teleop.disconnect()
         robot.disconnect()
     print(f"\n최종 성공률  파일 전체({LOG}): {fmt(file_rates())}")
 

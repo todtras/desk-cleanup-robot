@@ -290,10 +290,10 @@ def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_off
     return k, hold
 
 
-def load_knn(name):
+def load_knn(name, repos=("v2", "demo")):
     """시연 표 [(x, y, 이름, 에피소드, 동작 배열)]. 위치는 demo_map 표(json)에서 읽음 (영상을 여기서 읽으면 av 때문에 카메라가 안 열림)"""
     table = []
-    for repo, dx, dy in ((f"pick_{name}_v2", *V2_TO_NOW), (f"pick_{name}_demo", 0, 0)):
+    for repo, dx, dy in [r for k, r in (("v2", (f"pick_{name}_v2", *V2_TO_NOW)), ("demo", (f"pick_{name}_demo", 0, 0))) if k in repos]:
         pos_file = Path(f"outputs/demo_map/{repo}.json")
         files = glob.glob(str(DATA_ROOT / repo / "data/chunk-*/file-*.parquet"))
         if not files:
@@ -499,6 +499,7 @@ def main():
     ap.add_argument("--fps", type=float, default=FPS, help="정책 루프 속도. 낮추면 느리게 (시간도 그만큼 늘릴 것: --seconds)")
     ap.add_argument("--collect", action="store_true", help="교정(i)·성공 시도 저장 모드. 맨 위 설명 참고")
     ap.add_argument("--knn", action="store_true", help="정책 대신 가장 가까운 시연 재생 (비교 기준). 맨 위 설명 참고")
+    ap.add_argument("--knn_from", nargs="+", default=["v2", "demo"], choices=["v2", "demo"], help="--knn에 쓸 시연: v2(10/30), demo(11/6). 날짜별 차이 확인용")
     ap.add_argument("--head_shift", type=float, nargs=2, metavar=("DX", "DY"), help="head 화면을 옮겨 학습 때 구도에 맞춤 (check_head의 dx, dy 부호 반대로). 기록은 run_log_shift_<dx>_<dy>.csv")
     args = ap.parse_args()
     if args.head_shift:
@@ -528,7 +529,7 @@ def main():
     for name in PLAN:
         path = ckpt_path(name, args.step, args.v3)
         if args.knn:
-            policies[name] = load_knn(name)
+            policies[name] = load_knn(name, args.knn_from)
         elif Path(path).exists():
             policies[name] = load_policy(path, args.device, args.n_action_steps)
         else:
@@ -574,6 +575,8 @@ def main():
                 if args.pan_offset is not None:
                     pan = args.pan_offset
                 reach = reach_px(name, step, box) if args.reach_px is None else args.reach_px
+                if args.knn:  # 재생에는 보정을 안 더함 (기록에 보정값이 남지 않게)
+                    pan, reach = 0.0, 0.0
                 print(f"\n{name} ({conf:.2f}, x={(box[0] + box[2]) // 2}, y={(box[1] + box[3]) // 2}) → act_pick_{name} {step} 실행, "
                       f"pan 보정 {pan:+.1f}도, 거리 보정 {reach:+.0f}px. 스페이스=지금 놓기, q=이번 시도 중단")
                 t0 = time.perf_counter()

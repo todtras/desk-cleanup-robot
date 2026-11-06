@@ -106,6 +106,12 @@ def main():
     time.sleep(1.0)
     print("4. 비상정지:", s["message"], f"(멈추기까지 {time.time() - t - 1.0:.2f}초)")
     assert robot.sent == n, "비상정지 상태인데 명령을 계속 보냄"
+    held = dict(robot.pos)
+    assert c.post("/api/release").json()["ok"]
+    grip = max(p["gripper.pos"] for k, p in ra.POSES.items() if k.endswith("_drop"))
+    assert abs(robot.pos["gripper.pos"] - grip) < 1e-6 and all(robot.pos[k] == v for k, v in held.items() if k != "gripper.pos")
+    assert c.get("/api/status").json()["state"] == "estop", "놓아도 비상정지 상태 유지"
+    print("5. 물건 놓기:", c.get("/api/status").json()["message"])
     print("ALL OK")
 
 

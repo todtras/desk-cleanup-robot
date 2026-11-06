@@ -15,13 +15,25 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
-from run_auto import detect_all  # 정책 실행과 같은 탐지 설정. run_auto가 작업 폴더를 dev로 맞춤
+from run_auto import V2_TO_NOW, detect_all  # 정책 실행과 같은 탐지 설정. run_auto가 작업 폴더를 dev로 맞춤
 
 WS = (170, 230, 540, 430)  # 작업 구역 (head 화면 x1, y1, x2, y2). progress.md의 시작 위치 범위. 구역을 바꾸면 여기만
-COLS, ROWS, LOW = 6, 4, 3  # 격자, 이 개수 미만인 칸은 붉게
+COLS, ROWS, LOW = 6, 4, 4  # 격자, 이 개수 미만인 칸은 붉게
 OUT = Path("outputs/demo_map")
 PORT = 8010  # 녹화 중 실시간 지도 주소 http://localhost:8010 (venv의 opencv에 창 기능이 없어 브라우저로 표시)
-V2_TO_NOW = (-23, 2)  # 10/30 시연 화면 → 11/6 화면 어긋남(px, check_head). ponytail: 카메라를 다시 옮기면 여기도 다시 잴 것
+
+
+PAGE = b"""<!doctype html><title>demo map</title><body style='margin:0;background:#111'><img id=v style='width:100%;max-width:1280px'>
+<script>
+const v = document.getElementById("v");
+function tick() {
+  const i = new Image();
+  i.onload = () => { v.src = i.src; setTimeout(tick, 100); };
+  i.onerror = () => setTimeout(tick, 500);
+  i.src = "/f.jpg?" + Date.now();
+}
+tick();
+</script>"""
 
 
 def grid(pts):
@@ -139,21 +151,17 @@ class Live:
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
-                if self.path == "/":  # 연결이 끊기면 브라우저가 스스로 다시 붙음
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/html")
-                    self.end_headers()
-                    self.wfile.write(b"<!doctype html><title>demo map</title><body style='margin:0;background:#111'>"
-                                     b"<img src='/s' style='width:100%;max-width:1280px' onerror=\"setTimeout(()=>this.src='/s?'+Date.now(),500)\">")
-                    return
-                self.send_response(200)
-                self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=f")
-                self.end_headers()
+                # 연속 스트림(MJPEG)은 끊기면 화면이 검게 변해서, 사진을 한 장씩 받아 다 받은 뒤에만 바꿈 → 실패해도 마지막 화면 유지
+                body, kind = PAGE, "text/html"
+                if self.path.startswith("/f.jpg"):
+                    body, kind = live.jpg or b"", "image/jpeg"
                 try:
-                    while True:
-                        if live.jpg:
-                            self.wfile.write(b"--f\r\nContent-Type: image/jpeg\r\n\r\n" + live.jpg + b"\r\n")
-                        time.sleep(0.1)
+                    self.send_response(200 if body else 503)
+                    self.send_header("Content-Type", kind)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(body)
                 except OSError:  # 브라우저 닫음
                     pass
 

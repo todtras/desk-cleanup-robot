@@ -147,6 +147,7 @@ Cleaner의 상태(`state`):
 | 요청 | 하는 일 | 응답 |
 |---|---|---|
 | `GET /api/status` | 지금 상태 | 아래 JSON |
+| `POST /api/release` | 물건 놓기 버튼 (`estop` 상태에서만, 누르기 전에 확인 창) | `{"ok": true}` (안 되는 상황이면 `false`) |
 | `POST /api/start` `/pause` `/resume` `/stop` `/estop` | 버튼 | `{"ok": true}` (안 되는 상황이면 `false`) |
 | `GET /api/settings` | 설정 읽기 | `{"objects": {...}, "speed": "normal", "max_retries": 1}` |
 | `PUT /api/settings` | 설정 저장 (바꿀 항목만 보내도 됨) | `{"ok": true}` (정리 중이면 `false`) |

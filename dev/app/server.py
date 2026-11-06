@@ -28,7 +28,7 @@ def status():
 @app.post("/api/{action}")
 def command(action: str):
     actions = {"start": cleaner.start, "pause": cleaner.pause, "resume": cleaner.resume,
-               "stop": cleaner.stop, "estop": cleaner.estop}
+               "stop": cleaner.stop, "estop": cleaner.estop, "release": cleaner.release}
     if action not in actions:
         return {"ok": False, "error": f"모르는 명령: {action}"}
     result = actions[action]()

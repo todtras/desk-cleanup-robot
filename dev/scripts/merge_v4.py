@@ -1,7 +1,7 @@
 """재학습용 합치기: 시연(_v2) + 사람 시연 보강(_demo) + 교정(_dagger) + 성공 시도(_success) → pick_<물체>_v4
 지우개만 효과 비교용으로 v4a(성공 시도 제외) / v4b(포함) 두 개. 원본은 건드리지 않고, 추가 데이터가 없는 물체는 건너뜀.
 노트북의 지우개·종이 _v2는 약한 위치 보강까지 들어간 것 (서버의 _v3와 같음)
-사용 (dev 폴더에서): python scripts/merge_v4.py [물체 ...]   결과: outputs/datasets/pick_<물체>_v4
+사용 (dev 폴더에서): python scripts/merge_v4.py [물체 ...] [--ver v5]   결과: outputs/datasets/pick_<물체>_v4
 """
 import argparse
 from pathlib import Path
@@ -17,10 +17,12 @@ def load(root, name):
     return LeRobotDataset(f"local/{name}", root=root / name, video_backend="pyav")
 
 
-def plan(obj):
-    """{결과 이름: 합칠 데이터셋}"""
+def plan(obj, ver="v4"):
+    """{결과 이름: 합칠 데이터셋}. v4가 아닌 버전은 물체당 하나로 전부 합침"""
     base = [f"pick_{obj}_{kind}" for kind in ("v2", "demo", "dagger")]
     success = f"pick_{obj}_success"
+    if ver != "v4":
+        return {f"pick_{obj}_{ver}": [*base, success]}
     return {f"pick_{obj}_v4a": base, f"pick_{obj}_v4b": [*base, success]} if obj == "eraser" else {f"pick_{obj}_v4": [*base, success]}
 
 
@@ -47,6 +49,8 @@ def merge(root, out, parts):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("objects", nargs="*", default=OBJECTS, help="물체 이름 (생략하면 전부)")
-    for obj in ap.parse_args().objects:
-        for out, parts in plan(obj).items():
+    ap.add_argument("--ver", default="v4", help="결과 버전 이름 (v5면 pick_<물체>_v5)")
+    args = ap.parse_args()
+    for obj in args.objects:
+        for out, parts in plan(obj, args.ver).items():
             merge(ROOT, out, parts)

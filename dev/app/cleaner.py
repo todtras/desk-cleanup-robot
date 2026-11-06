@@ -65,6 +65,14 @@ class FakeCleaner:
     def estop(self):
         self.cmd = "estop"
 
+    def release(self):
+        """비상정지 후 잡고 있는 물건 놓기"""
+        if self.st["state"] != "estop":
+            return False
+        self._set(message="물건을 놓았어요. 주변을 확인한 뒤 다시 시작하세요")
+        self._notify("비상정지 상태에서 물건을 놓았어요")
+        return True
+
     def get_settings(self):
         return self.settings
 

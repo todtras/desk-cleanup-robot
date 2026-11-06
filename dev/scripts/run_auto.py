@@ -9,6 +9,8 @@
 - 전체 종료 = 성공 질문에 q, 급하면 Ctrl+C
 - 시도마다 성공 여부(y/n)와 실패 이유(번호 또는 직접 입력)를 입력받아 outputs/run_log.csv에 기록, 클래스별 성공률 출력 (로봇 없이 보기: --stats)
 - 카메라 번호는 record_pick.yaml 그대로 씀 (실행마다 head/wrist가 바뀔 수 있으니 시작 화면 확인)
+- --knn: 비교 기준. 정책 없이 물체 위치와 가장 가까운 시연(_v2, _demo)의 동작을 그대로 재생. 기록은 outputs/run_log_knn.csv
+  시연 위치 표가 먼저 있어야 함: python scripts/demo_map.py pick_tape_v2 pick_tape_demo ...
 - --collect: 데이터 모으기 (리더 암 연결 필요). 기록은 outputs/run_log_collect.csv (기준 성공률과 섞이지 않음)
   · 빗나가려 하면 i → 팔 멈춤 → 리더를 팔로워 자세에 맞춤 (차이 표시) → i → 직접 집어 들어 올림 → i → 저장 여부. 넘겨받은 구간만 pick_<물체>_dagger에 저장. 수집 중엔 수거함까지 안 가고 그 자리에서 놓고 home
   · 정책이 혼자 깔끔하게 성공하면 쥐고 들어 올릴 때까지를 pick_<물체>_success에 저장
@@ -16,6 +18,7 @@
 import argparse
 import csv
 import ctypes
+import glob
 import json
 import logging
 import msvcrt
@@ -30,6 +33,7 @@ from pathlib import Path
 import cv2
 import draccus
 import numpy as np
+import pandas as pd
 import torch
 import yaml
 from lerobot.cameras import opencv  # noqa: F401  (opencv 카메라 타입 등록)
@@ -51,6 +55,7 @@ CFG =Path("configs/robot/record_pick.yaml")
 POSES = json.loads(Path("configs/robot/poses.json").read_text(encoding="utf-8"))
 LOG = Path("outputs/run_log.csv")
 COLLECT_LOG = Path("outputs/run_log_collect.csv")
+V2_TO_NOW = (-23, 2)  # 10/30 시연 화면 → 11/6 화면 어긋남(px, check_head). ponytail: 카메라를 다시 옮기면 여기도 다시 잴 것
 HEAD_SHIFT = None  # --head_shift: 정책·교정 녹화에 들어가는 head 화면 이동 (dx, dy)
 LOG_COLS = ["time", "class", "conf", "seconds", "success", "reason", "step", "fix", "pan", "reach", "x", "y",
             "policy", "fps", "n_action_steps", "smooth", "max_seconds", "yolo", "commit"]
@@ -285,6 +290,50 @@ def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_off
     return k, hold
 
 
+def load_knn(name):
+    """시연 표 [(x, y, 이름, 에피소드, 동작 배열)]. 위치는 demo_map 표(json)에서 읽음 (영상을 여기서 읽으면 av 때문에 카메라가 안 열림)"""
+    table = []
+    for repo, dx, dy in ((f"pick_{name}_v2", *V2_TO_NOW), (f"pick_{name}_demo", 0, 0)):
+        pos_file = Path(f"outputs/demo_map/{repo}.json")
+        files = glob.glob(str(DATA_ROOT / repo / "data/chunk-*/file-*.parquet"))
+        if not files:
+            continue
+        if not pos_file.exists():
+            raise SystemExit(f"위치 표 없음: python scripts/demo_map.py {repo}")
+        pos = dict(json.loads(pos_file.read_text()))
+        df = pd.concat(pd.read_parquet(f, columns=["episode_index", "frame_index", "action"]) for f in files)
+        if set(df["episode_index"].unique()) - set(pos):
+            raise SystemExit(f"위치 표가 오래됨: python scripts/demo_map.py {repo}")
+        for ep, g in df.groupby("episode_index"):
+            if pos[ep]:
+                table.append((pos[ep][0] + dx, pos[ep][1] + dy, repo, int(ep), np.stack(g.sort_values("frame_index")["action"].to_numpy())))
+    return table
+
+
+def nearest_demo(table, box):
+    """박스 중심과 시작 위치가 가장 가까운 시연, 거리(px)"""
+    cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+    d = min(table, key=lambda t: (t[0] - cx) ** 2 + (t[1] - cy) ** 2)
+    return d, float(np.hypot(d[0] - cx, d[1] - cy))
+
+
+def run_replay(robot, actions, names, fps, poll_key=key):
+    """시연 동작 재생 (첫 자세까지 1초, 이후 fps로). run_policy와 같은 반환: (눌린 키, 쥐었으면 마지막 그리퍼 명령 아니면 None). 끝까지 재생해야 들어 올림까지 끝남"""
+    move_to(robot, dict(zip(names, actions[0].tolist())), 1.0)
+    g, grip, k, next_read, t0, seen = [], names.index("gripper.pos"), None, 0.0, time.perf_counter(), False
+    while not ESTOP.is_set() and k not in (" ", "q"):
+        t = (time.perf_counter() - t0) * fps
+        if t >= len(actions) - 1:
+            break
+        i, a = int(t), t - int(t)
+        robot.send_action(dict(zip(names, (actions[i] + (actions[i + 1] - actions[i]) * a).tolist())))
+        if t >= next_read:  # 정책 실행과 같은 간격으로 쥠 판단
+            g.append(robot.bus.sync_read("Present_Position")["gripper"])
+            seen, next_read, k = seen or grasped(g, fps), t + 1, poll_key()
+        time.sleep(1 / SEND_HZ)
+    return k, float(actions[-1][grip]) if seen else None
+
+
 def takeover(robot, teleop, features, poll_key=key):
     """팔은 멈춘 채 리더를 맞추게 한 뒤 넘겨받아 30Hz로 녹화. 반환: ([(관측, 리더 명령)], 마지막 그리퍼 명령), q면 (None, None)"""
     names, lock = features[ACTION]["names"], threading.Lock()
@@ -449,6 +498,7 @@ def main():
     ap.add_argument("--pan_scale", type=float, default=1.0, help="PAN_FIT 보정 배율. 실제 로봇 오차가 녹화로 잰 것보다 크면 키움 (outputs/pan_debug.csv 차이가 0에 가깝게)")
     ap.add_argument("--fps", type=float, default=FPS, help="정책 루프 속도. 낮추면 느리게 (시간도 그만큼 늘릴 것: --seconds)")
     ap.add_argument("--collect", action="store_true", help="교정(i)·성공 시도 저장 모드. 맨 위 설명 참고")
+    ap.add_argument("--knn", action="store_true", help="정책 대신 가장 가까운 시연 재생 (비교 기준). 맨 위 설명 참고")
     ap.add_argument("--head_shift", type=float, nargs=2, metavar=("DX", "DY"), help="head 화면을 옮겨 학습 때 구도에 맞춤 (check_head의 dx, dy 부호 반대로). 기록은 run_log_shift_<dx>_<dy>.csv")
     args = ap.parse_args()
     if args.head_shift:
@@ -456,6 +506,10 @@ def main():
         LOG = LOG.with_name(f"run_log_shift_{args.head_shift[0]:g}_{args.head_shift[1]:g}.csv")  # 기준 측정과 섞이지 않게
     if args.collect:
         LOG = COLLECT_LOG
+    if args.knn:
+        if args.collect:
+            raise SystemExit("--knn과 --collect는 함께 못 씀")
+        LOG = LOG.with_name("run_log_knn.csv")
     if args.stats:
         print(f"{LOG}: {fmt(file_rates())}")
         if LOG.exists():
@@ -473,7 +527,9 @@ def main():
     print(f"정책 불러오는 중: {', '.join(PLAN)}")
     for name in PLAN:
         path = ckpt_path(name, args.step, args.v3)
-        if Path(path).exists():
+        if args.knn:
+            policies[name] = load_knn(name)
+        elif Path(path).exists():
             policies[name] = load_policy(path, args.device, args.n_action_steps)
         else:
             print(f"[건너뜀] {name}: 체크포인트 없음 ({path})")
@@ -523,8 +579,15 @@ def main():
                 t0 = time.perf_counter()
                 GRASP_POSE.clear()
                 rec = [] if args.collect else None
-                k, hold = run_policy(robot, *policies[name], features, args.seconds, args.fps, args.smooth, pan,
-                                     extra=reach_fix(name, reach), rec=rec)
+                meta = run_meta(args, name)
+                if args.knn:
+                    (dx, dy, repo, ep, actions), dist = nearest_demo(policies[name], box)
+                    step, meta[0] = "knn", f"{repo}#{ep} d={dist:.0f}px"
+                    print(f"가장 가까운 시연: {meta[0]}")
+                    k, hold = run_replay(robot, actions, features[ACTION]["names"], args.fps)
+                else:
+                    k, hold = run_policy(robot, *policies[name], features, args.seconds, args.fps, args.smooth, pan,
+                                         extra=reach_fix(name, reach), rec=rec)
                 if args.collect and k in INTERVENE:
                     frames, grip = takeover(robot, teleop, features)
                     keep = bool(frames) and input("쥐고 들어 올렸나요? 저장하고 수거함으로 y / 버리기 n: ").strip().lower() == "y"
@@ -567,7 +630,7 @@ def main():
                     fix = "off" if abs(pan) < 1e-6 and abs(reach) < 1e-6 else "on"  # 실제로 더한 보정 기준
                     row = [datetime.now().isoformat(timespec="seconds"), name, f"{conf:.2f}", f"{time.perf_counter() - t0:.1f}",
                            ok, reason, step, fix, f"{pan:.2f}", f"{reach:.1f}", (box[0] + box[2]) // 2, (box[1] + box[3]) // 2,
-                           *run_meta(args, name)]
+                           *meta]
                     log.writerow(row)
                     f.flush()
                     session.append((tag({"class": name, "step": step, "fix": fix, "fps": args.fps, "n_action_steps": args.n_action_steps}), ok))

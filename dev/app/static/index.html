@@ -26,11 +26,15 @@
   <button id="resume">계속</button>
   <button id="stop">중지</button>
   <button id="estop">비상정지</button>
+  <button id="release">물건 놓기</button>
   <ul id="notifications"></ul>
   <script>
     for (const id of ["start", "pause", "resume", "stop", "estop"]) {
       document.getElementById(id).onclick = () => fetch("/api/" + id, { method: "POST" });
     }
+    document.getElementById("release").onclick = () => {
+      if (confirm("물건이 그 자리에서 떨어져요. 아래가 비어 있나요?")) fetch("/api/release", { method: "POST" });
+    };
     async function refresh() {
       const s = await (await fetch("/api/status")).json();
       document.getElementById("message").textContent = s.message;
@@ -40,6 +44,7 @@
       document.getElementById("pause").disabled = s.state !== "cleaning";
       document.getElementById("resume").disabled = s.state !== "paused";
       document.getElementById("stop").disabled = !["cleaning", "paused"].includes(s.state);
+      document.getElementById("release").disabled = s.state !== "estop";
       document.getElementById("notifications").innerHTML =
         s.notifications.slice(-5).reverse().map(n => `<li>${n.time} ${n.text}</li>`).join("");
     }

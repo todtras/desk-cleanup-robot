@@ -27,6 +27,7 @@ from app.cleaner import BINS, OBJECTS, load_settings, SETTINGS_FILE  # noqa: E40
 LOG = Path("outputs/app_log.csv")  # 웹으로 돌린 시도 기록 (run_log.csv와 섞지 않음)
 FPS = {"normal": 15, "slow": 10}  # 속도 설정 → 정책 fps (15보다 빠르면 팔이 못 따라감)
 SECONDS = 30  # 정책 최대 시간 (보통 속도 기준, 느리게면 비례해서 늘림)
+N_ACTION_STEPS = 40  # 예측한 동작 중 실행할 개수. run_auto 측정과 같은 값 (물체를 약 2.7초마다 다시 봄)
 SAME_SPOT_PX = 50  # 놓은 뒤 같은 물건이 원래 자리 이만큼 안에 보이면 실패. ponytail: 같은 종류 물건이 근처에 또 있으면 오판
 
 
@@ -44,8 +45,8 @@ class RealCleaner:
         self.settings = load_settings()
         self.step = step = step or self.settings.get("step", "010000")
         logging.disable(logging.WARNING)  # 체크포인트마다 cuda 경고
-        self.policies = {o: ra.load_policy(ra.CKPT.format(o, step), "cpu", 100)
-                         for o in ra.PLAN if Path(ra.CKPT.format(o, step)).exists()}
+        self.policies = {o: ra.load_policy(ra.ckpt_path(o, step, True), "cpu", N_ACTION_STEPS)  # 지우개·종이는 v3, 나머지는 v2
+                         for o in ra.PLAN if Path(ra.ckpt_path(o, step, True)).exists()}
         logging.disable(logging.NOTSET)
         self.robot = robot or make_robot_from_config(
             draccus.decode(RobotConfig, yaml.safe_load(ra.CFG.read_text(encoding="utf-8"))["robot"]))
@@ -106,6 +107,19 @@ class RealCleaner:
 
     def estop(self):
         ra.ESTOP.set()  # 정책 루프·move_to가 다음 명령 전에 멈춤 → _run_safe가 지금 자세 고정
+
+    def release(self):
+        """비상정지 후 잡고 있는 물건 놓기: 다른 관절은 그대로, 그리퍼만 0.5초에 걸쳐 열기"""
+        if self.st["state"] != "estop":
+            return False
+        now = {k: v for k, v in self.robot.get_observation().items() if k.endswith(".pos")}
+        grip = max(p["gripper.pos"] for k, p in ra.POSES.items() if k.endswith("_drop"))  # 수거함에서 놓을 때 가장 크게 여는 값
+        for i in range(1, 16):
+            self.robot.send_action({**now, "gripper.pos": now["gripper.pos"] + (grip - now["gripper.pos"]) * i / 15})
+            time.sleep(1 / 30)
+        self._set(message="물건을 놓았어요. 주변을 확인한 뒤 다시 시작하세요")
+        self._notify("비상정지 상태에서 물건을 놓았어요")
+        return True
 
     def get_settings(self):
         return self.settings
@@ -190,8 +204,8 @@ class RealCleaner:
                           message=f"{OBJECTS[name]} 집는 중 ({attempt + 1}번째)")
                 t0 = time.perf_counter()
                 key, hold = ra.run_policy(self.robot, *self.policies[name], self.features, seconds, fps, 0.3,
-                                          ra.PAN_OFFSET.get(name, 0.0) + (s.get("pan_scale", 1.0) * ra.pan_fix(name, self.step, box) if s.get("pan_fit", True) else 0.0),
-                                          extra=ra.reach_fix(name, ra.reach_px(name, self.step, box)), poll_key=lambda: "q" if self.cmd == "stop" else None)
+                                          ra.PAN_OFFSET.get(name, 0.0) + (s.get("pan_scale", 1.0) * ra.pan_fix(name, ra.step_label(name, self.step, True), box) if s.get("pan_fit", True) else 0.0),
+                                          extra=ra.reach_fix(name, ra.reach_px(name, ra.step_label(name, self.step, True), box)), poll_key=lambda: "q" if self.cmd == "stop" else None)
                 if ra.ESTOP.is_set():
                     return
                 if hold is not None:

@@ -21,6 +21,7 @@ WS = (170, 230, 540, 430)  # 작업 구역 (head 화면 x1, y1, x2, y2). progres
 COLS, ROWS, LOW = 6, 4, 3  # 격자, 이 개수 미만인 칸은 붉게
 OUT = Path("outputs/demo_map")
 PORT = 8010  # 녹화 중 실시간 지도 주소 http://localhost:8010 (venv의 opencv에 창 기능이 없어 브라우저로 표시)
+V2_TO_NOW = (-23, 2)  # 10/30 시연 화면 → 11/6 화면 어긋남(px, check_head). ponytail: 카메라를 다시 옮기면 여기도 다시 잴 것
 
 
 def grid(pts):
@@ -70,7 +71,7 @@ def load(name, model):
     """데이터셋 전체 위치 {에피소드: [x, y] 또는 None}, 마지막 에피소드 첫 화면(RGB). 데이터셋이 아직 없으면 ({}, None)"""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     root, cache = Path("outputs/datasets") / name, OUT / f"{name}.json"
-    if not (root / "meta/info.json").exists():
+    if not (root / "meta/episodes").exists():  # 없거나 첫 에피소드 저장 전에 끊김 (읽으려 하면 lerobot이 허깅페이스에서 찾다가 실패)
         return {}, None
     OUT.mkdir(parents=True, exist_ok=True)
     pos = dict(json.loads(cache.read_text())) if cache.exists() else {}
@@ -94,6 +95,9 @@ class Live:
         self.model = YOLO("models/best.pt")
         pos, _ = load(name, self.model)
         self.pts = [p for p in pos.values() if p]
+        if name.endswith("_demo"):  # 보강 녹화: 기존 시연 위치도 함께 표시 → 정말 빈 곳을 채움
+            base, _ = load(f"pick_{self.cls}_v2", self.model)
+            self.pts = [[x + V2_TO_NOW[0], y + V2_TO_NOW[1]] for x, y in filter(None, base.values())] + self.pts
         self.fails = sum(p is None for p in pos.values())
         self.mark_next, self.last_found, self.jpg = False, None, None
 
@@ -116,15 +120,18 @@ class Live:
                     return
                 time.sleep(0.1)
                 continue
-            if self.mark_next:  # 에피소드 시작 순간 위치를 찍음 (제어 스레드와 분리)
-                self.mark_next = False
-                p = find(self.model, rgb, self.cls)
-                self.last_found = bool(p)
-                if p:
-                    self.pts.append(p)
-                else:
-                    self.fails += 1
-            self.jpg = cv2.imencode(".jpg", draw(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), self.name, self.pts, self.fails))[1].tobytes()
+            try:  # 탐지·그리기 오류로 스레드가 죽으면 화면이 멈춤. 지도는 보조라 녹화에 영향 없게 기록만 하고 계속
+                if self.mark_next:  # 에피소드 시작 순간 위치를 찍음 (제어 스레드와 분리)
+                    self.mark_next = False
+                    p = find(self.model, rgb, self.cls)
+                    self.last_found = bool(p)
+                    if p:
+                        self.pts.append(p)
+                    else:
+                        self.fails += 1
+                self.jpg = cv2.imencode(".jpg", draw(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), self.name, self.pts, self.fails))[1].tobytes()
+            except Exception as e:
+                print(f"[demo_map] {type(e).__name__}: {e}", flush=True)
             time.sleep(0.1)  # 10fps면 충분. 녹화 CPU를 뺏지 않게
 
     def serve(self):
@@ -132,6 +139,13 @@ class Live:
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
+                if self.path == "/":  # 연결이 끊기면 브라우저가 스스로 다시 붙음
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html")
+                    self.end_headers()
+                    self.wfile.write(b"<!doctype html><title>demo map</title><body style='margin:0;background:#111'>"
+                                     b"<img src='/s' style='width:100%;max-width:1280px' onerror=\"setTimeout(()=>this.src='/s?'+Date.now(),500)\">")
+                    return
                 self.send_response(200)
                 self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=f")
                 self.end_headers()

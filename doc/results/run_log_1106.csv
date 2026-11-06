@@ -1,0 +1,89 @@
+﻿time,class,conf,seconds,success,reason,step,fix,pan,reach,x,y,policy,fps,n_action_steps,smooth,max_seconds,yolo,commit
+2026-11-06T10:08:16,bottle,0.96,26.6,y,,100000,off,0.00,0.0,333,339,outputs/train/act_pick_bottle_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:08:48,bottle,0.94,32.7,y,,100000,off,0.00,0.0,308,379,outputs/train/act_pick_bottle_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:10:04,bottle,0.80,75.2,y,,100000,off,0.00,0.0,472,357,outputs/train/act_pick_bottle_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:10:37,bottle,0.93,32.8,y,,100000,off,0.00,0.0,469,307,outputs/train/act_pick_bottle_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:11:03,bottle,0.93,26.3,y,,100000,off,0.00,0.0,181,348,outputs/train/act_pick_bottle_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:12:26,bottle,0.96,83.4,y,,100000,off,0.00,0.0,193,292,outputs/train/act_pick_bottle_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:12:54,eraser,0.90,27.8,y,,v3-100000,off,0.00,0.0,299,355,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:13:37,eraser,0.89,43.0,n,빗나감-왼쪽,v3-100000,off,0.00,0.0,315,394,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:14:03,eraser,0.91,26.1,y,,v3-100000,off,0.00,0.0,441,368,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:14:35,eraser,0.94,31.4,y,,v3-100000,off,0.00,0.0,451,320,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:15:02,eraser,0.86,27.2,y,,v3-100000,off,0.00,0.0,182,351,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:15:46,eraser,0.89,44.4,y,,v3-100000,off,0.00,0.0,178,321,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:18:26,bottle,0.93,40.3,y,,050000,off,0.00,0.0,290,331,outputs/train/act_pick_bottle_v2/checkpoints/050000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:19:03,bottle,0.91,36.9,y,,050000,off,0.00,0.0,307,391,outputs/train/act_pick_bottle_v2/checkpoints/050000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:19:43,bottle,0.88,40.1,n,빗나감-왼쪽,050000,off,0.00,0.0,465,337,outputs/train/act_pick_bottle_v2/checkpoints/050000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:20:21,bottle,0.87,38.0,n,빗나감-왼쪽,050000,off,0.00,0.0,484,287,outputs/train/act_pick_bottle_v2/checkpoints/050000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:20:56,bottle,0.95,35.2,y,,050000,off,0.00,0.0,157,323,outputs/train/act_pick_bottle_v2/checkpoints/050000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:21:50,bottle,0.98,53.1,n,빗나감-왼쪽,050000,off,0.00,0.0,153,247,outputs/train/act_pick_bottle_v2/checkpoints/050000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:22:17,eraser,0.89,27.0,y,,v3-050000,off,0.00,0.0,295,353,outputs/train/act_pick_eraser_v3/checkpoints/050000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:22:48,eraser,0.90,31.2,y,,v3-050000,off,0.00,0.0,304,407,outputs/train/act_pick_eraser_v3/checkpoints/050000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:23:19,eraser,0.90,31.3,n,빗나감-왼쪽,v3-050000,off,0.00,0.0,457,356,outputs/train/act_pick_eraser_v3/checkpoints/050000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:24:04,eraser,0.93,44.8,n,"2, 9",v3-050000,off,0.00,0.0,449,291,outputs/train/act_pick_eraser_v3/checkpoints/050000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:24:31,eraser,0.88,27.2,n,빗나감-왼쪽,v3-050000,off,0.00,0.0,158,352,outputs/train/act_pick_eraser_v3/checkpoints/050000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:31:53,tape,0.98,31.4,y,,100000,off,0.00,0.0,294,347,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:34:47,tape,0.81,174.2,n,빗나감-왼쪽+너무 뻗음(앞),100000,off,0.00,0.0,288,288,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:35:17,tape,0.86,30.5,n,덜 뻗음(뒤),100000,off,0.00,0.0,292,414,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:35:49,tape,0.83,31.1,n,빗나감-왼쪽,100000,off,0.00,0.0,433,355,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:36:17,tape,0.86,28.3,n,빗나감-오른쪽,100000,off,0.00,0.0,411,288,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:36:44,tape,0.91,27.4,n,빗나감-왼쪽,100000,off,0.00,0.0,438,405,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:37:14,tape,0.98,29.2,n,빗나감-왼쪽+덜 뻗음(뒤),100000,off,0.00,0.0,172,348,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:38:01,tape,0.94,47.3,n,빗나감-왼쪽,100000,off,0.00,0.0,183,276,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:38:25,tape,0.75,24.4,y,,100000,off,0.00,0.0,182,390,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:41:01,pen,0.50,22.2,y,,100000,off,0.00,0.0,297,365,outputs/train/act_pick_pen_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:41:31,pen,0.66,30.2,y,,100000,off,0.00,0.0,287,298,outputs/train/act_pick_pen_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:42:19,pen,0.51,48.1,n,덜 뻗음(뒤),100000,off,0.00,0.0,299,427,outputs/train/act_pick_pen_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:42:41,pen,0.47,21.4,y,,100000,off,0.00,0.0,443,357,outputs/train/act_pick_pen_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:43:06,pen,0.47,25.1,n,빗나감-오른쪽,100000,off,0.00,0.0,456,287,outputs/train/act_pick_pen_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:43:45,pen,0.55,39.1,n,빗나감-오른쪽+덜 뻗음(뒤),100000,off,0.00,0.0,449,402,outputs/train/act_pick_pen_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:44:21,pen,0.71,35.9,n,덜 뻗음(뒤),100000,off,0.00,0.0,180,353,outputs/train/act_pick_pen_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:44:44,pen,0.67,22.7,n,빗나감-왼쪽,100000,off,0.00,0.0,175,276,outputs/train/act_pick_pen_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:45:10,pen,0.73,26.1,n,덜 뻗음(뒤),100000,off,0.00,0.0,181,402,outputs/train/act_pick_pen_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:46:23,paper,0.94,27.8,y,,v3-100000,off,0.00,0.0,306,345,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:46:55,paper,0.92,32.4,n,빗나감-왼쪽+너무 뻗음(앞),v3-100000,off,0.00,0.0,289,264,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:47:42,paper,0.96,47.0,n,종이가 팅겨나감,v3-100000,off,0.00,0.0,292,406,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:49:33,paper,0.93,28.2,n,빗나감-왼쪽,v3-100000,off,0.00,0.0,453,340,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:49:54,paper,0.93,21.1,n,너무 뻗음(앞),v3-100000,off,0.00,0.0,432,273,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:50:31,paper,0.94,36.6,n,빗나감-왼쪽+덜 뻗음(뒤),v3-100000,off,0.00,0.0,470,403,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:51:04,paper,0.91,33.0,n,빗나감-왼쪽,v3-100000,off,0.00,0.0,163,342,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:51:24,paper,0.97,20.6,n,빗나감-왼쪽,v3-100000,off,0.00,0.0,166,249,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:51:46,paper,0.94,21.3,n,빗나감-왼쪽,v3-100000,off,0.00,0.0,173,396,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:25:56,tape,0.86,22.8,y,,100000,on,1.50,0.0,463,357,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:26:27,tape,0.91,31.3,n,덜 뻗음(뒤),100000,on,1.50,0.0,470,413,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:26:50,tape,0.98,23.0,n,빗나감-왼쪽,100000,on,1.50,0.0,176,252,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:27:19,tape,0.90,28.9,y,,100000,on,1.50,0.0,296,355,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:27:48,paper,0.96,28.2,y,,v3-100000,on,1.50,0.0,471,345,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:28:16,paper,0.95,28.3,y,,v3-100000,on,1.50,0.0,180,323,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:28:43,paper,0.94,26.7,n,빗나감-왼쪽,v3-100000,on,1.50,0.0,167,391,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:31:26,tape,0.78,32.1,n,덜 뻗음(뒤),100000,on,1.50,0.0,466,399,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:31:51,tape,0.92,25.1,n,빗나감-오른쪽,100000,on,1.50,0.0,316,403,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:32:14,tape,0.91,22.7,n,덜 뻗음(뒤),100000,on,1.50,0.0,182,370,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:32:38,tape,0.76,24.3,y,,100000,on,1.50,0.0,465,353,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:32:59,tape,0.86,20.9,y,,100000,on,1.50,0.0,306,356,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:33:17,tape,0.93,18.2,n,덜 뻗음(뒤),100000,on,1.50,0.0,174,349,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:33:35,tape,0.81,17.6,n,빗나감-오른쪽,100000,on,1.50,0.0,434,279,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:34:00,tape,0.82,24.8,n,너무 뻗음(앞),100000,on,1.50,0.0,292,280,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:35:30,tape,0.85,90.6,n,빗나감-왼쪽,100000,on,1.50,0.0,186,272,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:35:57,paper,0.88,26.7,n,덜 뻗음(뒤),v3-100000,on,1.50,0.0,448,410,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:36:17,paper,0.82,19.7,n,빗나감-왼쪽,v3-100000,on,1.50,0.0,443,370,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:36:44,paper,0.87,26.8,y,,v3-100000,on,1.50,0.0,312,408,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:37:10,paper,0.84,26.7,n,빗나감-왼쪽,v3-100000,on,1.50,0.0,188,407,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:37:37,paper,0.91,26.8,n,빗나감-왼쪽,v3-100000,on,1.50,0.0,458,356,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:38:02,paper,0.91,25.0,y,,v3-100000,on,1.50,0.0,297,343,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:38:29,paper,0.85,26.2,y,,v3-100000,on,1.50,0.0,180,332,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:38:49,paper,0.86,20.1,n,너무 뻗음(앞),v3-100000,on,1.50,0.0,458,283,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:39:09,paper,0.88,20.4,n,빗나감-왼쪽,v3-100000,on,1.50,0.0,303,266,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:39:28,paper,0.95,18.6,n,빗나감-왼쪽,v3-100000,on,1.50,0.0,207,259,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T13:36:28,eraser,0.91,29.3,n,빗나감-왼쪽+덜 뻗음(뒤),v3-100000,off,0.00,0.0,436,412,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T13:36:54,eraser,0.90,26.0,n,덜 뻗음(뒤),v3-100000,off,0.00,0.0,316,414,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T13:37:24,eraser,0.92,29.7,y,,v3-100000,off,0.00,0.0,180,380,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T13:37:54,eraser,0.94,29.4,n,빗나감-오른쪽+너무 뻗음(앞),v3-100000,off,0.00,0.0,426,276,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T13:38:15,eraser,0.89,21.7,n,너무 뻗음(앞),v3-100000,off,0.00,0.0,297,273,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T13:38:49,eraser,0.89,34.0,n,빗나감-왼쪽+너무 뻗음(앞),v3-100000,off,0.00,0.0,171,241,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T13:39:32,bottle,0.89,42.5,n,빗나감-오른쪽,100000,off,0.00,0.0,469,389,outputs/train/act_pick_bottle_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T13:39:55,bottle,0.94,22.5,y,,100000,off,0.00,0.0,304,402,outputs/train/act_pick_bottle_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T13:40:21,bottle,0.94,26.2,y,,100000,off,0.00,0.0,168,365,outputs/train/act_pick_bottle_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T13:40:55,bottle,0.96,34.3,n,빗나감-오른쪽+너무 뻗음(앞),100000,off,0.00,0.0,470,234,outputs/train/act_pick_bottle_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T13:41:31,bottle,0.93,35.4,n,빗나감-왼쪽+너무 뻗음(앞),100000,off,0.00,0.0,294,242,outputs/train/act_pick_bottle_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T13:41:57,bottle,0.96,26.1,n,빗나감-왼쪽,100000,off,0.00,0.0,163,226,outputs/train/act_pick_bottle_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty

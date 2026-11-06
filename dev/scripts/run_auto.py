@@ -10,7 +10,7 @@
 - 시도마다 성공 여부(y/n)와 실패 이유(번호 또는 직접 입력)를 입력받아 outputs/run_log.csv에 기록, 클래스별 성공률 출력 (로봇 없이 보기: --stats)
 - 카메라 번호는 record_pick.yaml 그대로 씀 (실행마다 head/wrist가 바뀔 수 있으니 시작 화면 확인)
 - --collect: 데이터 모으기 (리더 암 연결 필요). 기록은 outputs/run_log_collect.csv (기준 성공률과 섞이지 않음)
-  · 빗나가려 하면 i → 팔 멈춤 → 리더를 팔로워 자세에 맞춤 (차이 표시) → i → 직접 집어 들어 올림 → i → 저장 여부. 넘겨받은 구간만 pick_<물체>_dagger에 저장
+  · 빗나가려 하면 i → 팔 멈춤 → 리더를 팔로워 자세에 맞춤 (차이 표시) → i → 직접 집어 들어 올림 → i → 저장 여부. 넘겨받은 구간만 pick_<물체>_dagger에 저장. 수집 중엔 수거함까지 안 가고 그 자리에서 놓고 home
   · 정책이 혼자 깔끔하게 성공하면 쥐고 들어 올릴 때까지를 pick_<물체>_success에 저장
 """
 import argparse
@@ -51,6 +51,7 @@ CFG =Path("configs/robot/record_pick.yaml")
 POSES = json.loads(Path("configs/robot/poses.json").read_text(encoding="utf-8"))
 LOG = Path("outputs/run_log.csv")
 COLLECT_LOG = Path("outputs/run_log_collect.csv")
+HEAD_SHIFT = None  # --head_shift: 정책·교정 녹화에 들어가는 head 화면 이동 (dx, dy)
 LOG_COLS = ["time", "class", "conf", "seconds", "success", "reason", "step", "fix", "pan", "reach", "x", "y",
             "policy", "fps", "n_action_steps", "smooth", "max_seconds", "yolo", "commit"]
 COMMIT = subprocess.run(["git", "describe", "--always", "--dirty"], capture_output=True, text=True).stdout.strip()  # -dirty = 커밋 안 한 수정 있음
@@ -203,7 +204,14 @@ def observe(robot, lock):
     with lock:
         obs = {f"{m}.pos": v for m, v in robot.bus.sync_read("Present_Position").items()}
     obs.update({k: cam.read_latest() for k, cam in robot.cameras.items()})  # 카메라는 자체 스레드가 받은 최신 프레임
+    if HEAD_SHIFT:
+        obs["head"] = shift_image(obs["head"], *HEAD_SHIFT)
     return obs
+
+
+def shift_image(img, dx, dy):
+    """화면을 (dx, dy)px 옮김. 바깥은 가장자리 색으로. ponytail: 이동만 보정, 회전(약 0.5도)은 못 고침 → 근본 해결은 카메라를 다시 맞추기"""
+    return cv2.warpAffine(img, np.float32([[1, 0, dx], [0, 1, dy]]), img.shape[1::-1], borderMode=cv2.BORDER_REPLICATE)
 
 
 def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_offset, poll_key=key, extra=None, rec=None):
@@ -424,7 +432,7 @@ def run_meta(args, name):
 
 
 def main():
-    global LOG
+    global LOG, HEAD_SHIFT
     ap = argparse.ArgumentParser()
     ap.add_argument("--yolo", default="models/best.pt")
     ap.add_argument("--step", default="010000", help="체크포인트 스텝 폴더 (010000 ~ 100000)")
@@ -441,7 +449,11 @@ def main():
     ap.add_argument("--pan_scale", type=float, default=1.0, help="PAN_FIT 보정 배율. 실제 로봇 오차가 녹화로 잰 것보다 크면 키움 (outputs/pan_debug.csv 차이가 0에 가깝게)")
     ap.add_argument("--fps", type=float, default=FPS, help="정책 루프 속도. 낮추면 느리게 (시간도 그만큼 늘릴 것: --seconds)")
     ap.add_argument("--collect", action="store_true", help="교정(i)·성공 시도 저장 모드. 맨 위 설명 참고")
+    ap.add_argument("--head_shift", type=float, nargs=2, metavar=("DX", "DY"), help="head 화면을 옮겨 학습 때 구도에 맞춤 (check_head의 dx, dy 부호 반대로). 기록은 run_log_shift_<dx>_<dy>.csv")
     args = ap.parse_args()
+    if args.head_shift:
+        HEAD_SHIFT = args.head_shift
+        LOG = LOG.with_name(f"run_log_shift_{args.head_shift[0]:g}_{args.head_shift[1]:g}.csv")  # 기준 측정과 섞이지 않게
     if args.collect:
         LOG = COLLECT_LOG
     if args.stats:
@@ -518,9 +530,7 @@ def main():
                     keep = bool(frames) and input("쥐고 들어 올렸나요? 저장하고 수거함으로 y / 버리기 n: ").strip().lower() == "y"
                     if keep:
                         collector.save("dagger", name, frames)
-                        carry_and_drop(robot, PLAN[name], grip)
-                    else:
-                        release_and_home(robot, PLAN[name])
+                    release_and_home(robot, PLAN[name])  # 수집 중엔 수거함까지 안 감: 그 자리에서 놓고 home
                     log.writerow([datetime.now().isoformat(timespec="seconds"), name, f"{conf:.2f}", f"{time.perf_counter() - t0:.1f}", "n",
                                   "교정 저장" if keep else "교정 버림", step, "off", f"{pan:.2f}", f"{reach:.1f}",
                                   (box[0] + box[2]) // 2, (box[1] + box[3]) // 2, *run_meta(args, name)])
@@ -544,16 +554,16 @@ def main():
                     with PAN_LOG.open("a", encoding="utf-8") as pf:
                         pf.write(("time,class,step,x,y,pan_fix,end_pan,demo_pan,held\n" if new else "") +
                                  f"{datetime.now():%H:%M:%S},{name},{step},{cx:.0f},{by},{pan:.2f},{end:.2f},{want:.2f},{hold is not None}\n")
-                if hold is not None:
+                if hold is not None and not args.collect:
                     carry_and_drop(robot, PLAN[name], hold)
-                else:  # 못 쥠 / 스페이스 / q / 시간 초과 → 그 자리에서 그리퍼 열고 home
+                else:  # 못 쥠 / 스페이스 / q / 시간 초과 / 수집 중 → 그 자리에서 그리퍼 열고 home
                     release_and_home(robot, PLAN[name])
                 ok = input("성공? (y/n, q=종료): ").strip().lower()
                 if ok in ("y", "n"):
                     reason = ""
                     if ok == "n":
                         r = input(f"실패 이유 번호 또는 직접 입력 ({REASONS_HELP}) [빗나감 = 그리퍼가 물체보다 로봇 기준 어느 쪽]: ").strip()
-                        reason = REASONS.get(r, r)
+                        reason = "+".join(REASONS.get(p.strip(), p.strip()) for p in r.split(","))  # "2, 9"처럼 여러 개 가능
                     fix = "off" if abs(pan) < 1e-6 and abs(reach) < 1e-6 else "on"  # 실제로 더한 보정 기준
                     row = [datetime.now().isoformat(timespec="seconds"), name, f"{conf:.2f}", f"{time.perf_counter() - t0:.1f}",
                            ok, reason, step, fix, f"{pan:.2f}", f"{reach:.1f}", (box[0] + box[2]) // 2, (box[1] + box[3]) // 2,

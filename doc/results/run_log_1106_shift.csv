@@ -1,0 +1,7 @@
+﻿time,class,conf,seconds,success,reason,step,fix,pan,reach,x,y,policy,fps,n_action_steps,smooth,max_seconds,yolo,commit
+2026-11-06T10:56:10,tape,0.94,38.7,n,빗나감-왼쪽,100000,off,0.00,0.0,447,360,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:56:35,tape,0.92,25.3,n,덜 뻗음(뒤),100000,off,0.00,0.0,173,344,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:57:03,tape,0.84,27.5,n,빗나감-오른쪽,100000,off,0.00,0.0,445,295,outputs/train/act_pick_tape_v2/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:57:32,paper,0.92,29.4,y,,v3-100000,off,0.00,0.0,473,345,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:57:58,paper,0.95,25.3,n,빗나감-왼쪽,v3-100000,off,0.00,0.0,162,345,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T10:58:28,paper,0.88,29.9,n,너무 뻗음(앞),v3-100000,off,0.00,0.0,446,287,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty

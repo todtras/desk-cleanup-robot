@@ -1,0 +1,46 @@
+﻿time,class,conf,seconds,success,reason,step,fix,pan,reach,x,y,policy,fps,n_action_steps,smooth,max_seconds,yolo,commit
+2026-11-06T11:06:32,paper,0.91,190.8,n,교정 저장,v3-100000,off,0.00,0.0,466,407,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:08:23,paper,0.86,103.2,n,교정 저장,v3-100000,off,0.00,0.0,456,413,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:10:14,paper,0.90,95.5,n,교정 저장,v3-100000,off,0.00,0.0,467,374,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:11:45,paper,0.93,46.4,n,교정 저장,v3-100000,off,0.00,0.0,453,338,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:12:29,paper,0.94,39.8,n,교정 저장,v3-100000,off,0.00,0.0,476,401,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:13:16,paper,0.96,42.9,n,교정 저장,v3-100000,off,0.00,0.0,439,417,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:14:07,paper,0.86,43.4,n,교정 저장,v3-100000,off,0.00,0.0,474,251,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:15:28,paper,0.92,69.6,n,교정 저장,v3-100000,off,0.00,0.0,460,240,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:16:26,paper,0.94,52.3,n,교정 저장,v3-100000,off,0.00,0.0,461,256,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:16:52,paper,0.96,21.5,n,빗나감-왼쪽,v3-100000,off,0.00,0.0,300,416,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:17:33,paper,0.90,41.1,n,교정 버림,v3-100000,off,0.00,0.0,304,412,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:18:31,paper,0.87,50.7,n,교정 저장,v3-100000,off,0.00,0.0,305,396,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:19:18,paper,0.96,44.2,n,교정 저장,v3-100000,off,0.00,0.0,362,391,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:20:13,paper,0.95,52.6,n,교정 저장,v3-100000,off,0.00,0.0,246,409,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:21:15,paper,0.92,61.1,n,교정 저장,v3-100000,off,0.00,0.0,309,266,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T11:22:11,paper,0.88,50.7,n,교정 버림,v3-100000,off,0.00,0.0,317,271,outputs/train/act_pick_paper_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:07:54,eraser,0.91,69.0,n,교정 버림,v3-100000,off,0.00,0.0,446,410,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:09:14,eraser,0.93,77.1,n,교정 저장,v3-100000,off,0.00,0.0,445,384,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:10:02,eraser,0.93,45.5,n,교정 버림,v3-100000,off,0.00,0.0,318,404,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:10:26,eraser,0.91,22.2,y,,v3-100000,off,0.00,0.0,316,405,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:11:41,eraser,0.89,66.9,n,교정 저장,v3-100000,off,0.00,0.0,305,419,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:12:02,eraser,0.88,18.6,y,,v3-100000,off,0.00,0.0,197,397,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:12:56,eraser,0.96,51.4,n,교정 버림,v3-100000,off,0.00,0.0,484,351,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:13:29,eraser,0.97,32.4,n,,v3-100000,off,0.00,0.0,483,347,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:14:17,eraser,0.96,48.3,n,교정 저장,v3-100000,off,0.00,0.0,480,346,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:15:41,eraser,0.92,79.6,n,교정 버림,v3-100000,off,0.00,0.0,339,330,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:17:05,eraser,0.91,81.5,n,교정 저장,v3-100000,off,0.00,0.0,347,350,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:17:27,eraser,0.80,20.0,y,,v3-100000,off,0.00,0.0,202,338,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:18:38,eraser,0.86,69.7,n,교정 저장,v3-100000,off,0.00,0.0,455,275,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:19:23,eraser,0.91,42.6,n,교정 저장,v3-100000,off,0.00,0.0,293,269,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:19:42,eraser,0.81,18.2,y,,v3-100000,off,0.00,0.0,189,258,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:21:05,eraser,0.88,78.2,n,교정 버림,v3-100000,off,0.00,0.0,449,420,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:22:15,eraser,0.93,61.4,n,교정 버림,v3-100000,off,0.00,0.0,438,380,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:23:29,eraser,0.85,66.6,n,교정 저장,v3-100000,off,0.00,0.0,456,385,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:24:19,eraser,0.92,48.2,n,교정 저장,v3-100000,off,0.00,0.0,187,389,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:25:07,eraser,0.93,46.6,n,교정 저장,v3-100000,off,0.00,0.0,316,408,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:26:02,eraser,0.95,51.3,n,교정 저장,v3-100000,off,0.00,0.0,176,367,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:26:48,eraser,0.95,43.9,n,교정 버림,v3-100000,off,0.00,0.0,444,287,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:27:47,eraser,0.88,57.7,n,교정 저장,v3-100000,off,0.00,0.0,447,289,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:29:07,eraser,0.88,78.2,n,교정 저장,v3-100000,off,0.00,0.0,389,266,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:29:27,eraser,0.86,18.0,y,,v3-100000,off,0.00,0.0,251,262,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:30:36,eraser,0.90,63.9,n,교정 버림,v3-100000,off,0.00,0.0,172,252,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:31:33,eraser,0.92,54.6,n,교정 저장,v3-100000,off,0.00,0.0,162,251,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:32:26,eraser,0.94,37.8,n,교정 저장,v3-100000,off,0.00,0.0,446,333,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty
+2026-11-06T14:33:22,eraser,0.89,53.9,n,교정 저장,v3-100000,off,0.00,0.0,166,320,outputs/train/act_pick_eraser_v3/checkpoints/100000/pretrained_model,15.0,40,0.3,20,models/best.pt,28852f2-dirty

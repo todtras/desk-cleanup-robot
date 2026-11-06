@@ -20,6 +20,7 @@ import json
 import logging
 import msvcrt
 import os
+import subprocess
 import threading
 import time
 from collections import Counter
@@ -50,6 +51,9 @@ CFG =Path("configs/robot/record_pick.yaml")
 POSES = json.loads(Path("configs/robot/poses.json").read_text(encoding="utf-8"))
 LOG = Path("outputs/run_log.csv")
 COLLECT_LOG = Path("outputs/run_log_collect.csv")
+LOG_COLS = ["time", "class", "conf", "seconds", "success", "reason", "step", "fix", "pan", "reach", "x", "y",
+            "policy", "fps", "n_action_steps", "smooth", "max_seconds", "yolo", "commit"]
+COMMIT = subprocess.run(["git", "describe", "--always", "--dirty"], capture_output=True, text=True).stdout.strip()  # -dirty = 커밋 안 한 수정 있음
 DATA_ROOT = Path("outputs/datasets")
 INTERVENE = ("i", "I", "ㅑ")  # 교정 키 (한글 입력 상태면 ㅑ로 들어옴)
 ALIGN_MAX = 8.0  # 리더-팔로워 차이가 이 안이어야 넘겨받음. 쥔 물체를 떨어뜨리지 않을 정도로. 실물 보고 조정
@@ -386,7 +390,14 @@ def fmt(r):
 def tag(r):
     """기록 한 줄 → 'bottle 보정O' 처럼 물체 + 보정 여부 (예전 기록엔 fix 칸이 없어 물체만)"""
     step = f" {r['step']}" if r.get("step") else ""  # 체크포인트끼리 비교할 때 성공률이 섞이지 않게
-    return r["class"] + step + {"on": " 보정O", "off": " 보정X"}.get(r.get("fix") or "", "")
+    opts = f" a{r['n_action_steps']} f{r['fps']}" if r.get("n_action_steps") else ""  # 옵션이 다른 시도도 섞이지 않게
+    return r["class"] + step + opts + {"on": " 보정O", "off": " 보정X"}.get(r.get("fix") or "", "")
+
+
+def zone(r):
+    """head 화면 x → 위치 구간 (로봇 기준. 로봇 왼쪽 = 화면 오른쪽). 경계는 약했던 양 끝 기준"""
+    x = int(r.get("x") or -1)
+    return "?" if x < 0 else "로봇오른쪽" if x < 250 else "로봇왼쪽" if x > 420 else "가운데"
 
 
 def file_rates():
@@ -394,6 +405,22 @@ def file_rates():
         return {}
     with LOG.open(encoding="utf-8-sig") as f:
         return rates((tag(r), r["success"]) for r in csv.DictReader(f))
+
+
+def rotate_old_log(log=None):
+    """칸이 다른 예전 기록은 run_log_MMDD.csv로 옮겨 보관 (같은 파일에 칸이 어긋나게 섞이지 않게)"""
+    log = log or LOG
+    if not log.exists():
+        return
+    with log.open(encoding="utf-8-sig") as f:
+        if next(csv.reader(f), None) == LOG_COLS:
+            return
+    log.rename(log.with_name(f"{log.stem}_{datetime.fromtimestamp(log.stat().st_mtime):%m%d}{log.suffix}"))
+
+
+def run_meta(args, name):
+    """시도마다 남기는 버전·옵션. 보고서에서 어떤 조건의 결과인지 이 칸들로 구분"""
+    return [ckpt_path(name, args.step, args.v3), args.fps, args.n_action_steps, args.smooth, args.seconds, args.yolo, COMMIT]
 
 
 def main():
@@ -424,6 +451,9 @@ def main():
                 fails = Counter((tag(r), r.get("reason") or "?") for r in csv.DictReader(f) if r["success"] == "n")
             for (c, why), n in sorted(fails.items()):
                 print(f"  실패 {c} - {why}: {n}")
+            with LOG.open(encoding="utf-8-sig") as f:
+                by_zone = rates((f"{tag(r)} {zone(r)}", r["success"]) for r in csv.DictReader(f))
+            print("위치별:\n  " + fmt(by_zone).replace(", ", "\n  "))
         return
 
     policies = {}
@@ -445,6 +475,7 @@ def main():
                 **hw_to_dataset_features(robot.action_features, ACTION)}
     model = YOLO(args.yolo)
     LOG.parent.mkdir(exist_ok=True)
+    rotate_old_log()
     new_log = not LOG.exists()
     teleop, collector = None, None
     if args.collect:
@@ -460,7 +491,7 @@ def main():
         with LOG.open("a", newline="", encoding="utf-8-sig") as f:
             log = csv.writer(f)
             if new_log:
-                log.writerow(["time", "class", "conf", "seconds", "success", "reason", "step", "fix", "pan", "reach", "x", "y"])
+                log.writerow(LOG_COLS)
             session = []  # 이번 실행 기록 (class, y/n)
             while True:
                 found = detect_all(model, robot.get_observation()["head"], policies)
@@ -492,7 +523,7 @@ def main():
                         release_and_home(robot, PLAN[name])
                     log.writerow([datetime.now().isoformat(timespec="seconds"), name, f"{conf:.2f}", f"{time.perf_counter() - t0:.1f}", "n",
                                   "교정 저장" if keep else "교정 버림", step, "off", f"{pan:.2f}", f"{reach:.1f}",
-                                  (box[0] + box[2]) // 2, (box[1] + box[3]) // 2])
+                                  (box[0] + box[2]) // 2, (box[1] + box[3]) // 2, *run_meta(args, name)])
                     f.flush()
                     if input("다음 물체를 놓고 Enter (q=종료): ").strip().lower() == "q":
                         break
@@ -525,10 +556,11 @@ def main():
                         reason = REASONS.get(r, r)
                     fix = "off" if abs(pan) < 1e-6 and abs(reach) < 1e-6 else "on"  # 실제로 더한 보정 기준
                     row = [datetime.now().isoformat(timespec="seconds"), name, f"{conf:.2f}", f"{time.perf_counter() - t0:.1f}",
-                           ok, reason, step, fix, f"{pan:.2f}", f"{reach:.1f}", (box[0] + box[2]) // 2, (box[1] + box[3]) // 2]
+                           ok, reason, step, fix, f"{pan:.2f}", f"{reach:.1f}", (box[0] + box[2]) // 2, (box[1] + box[3]) // 2,
+                           *run_meta(args, name)]
                     log.writerow(row)
                     f.flush()
-                    session.append((tag({"class": name, "step": step, "fix": fix}), ok))
+                    session.append((tag({"class": name, "step": step, "fix": fix, "fps": args.fps, "n_action_steps": args.n_action_steps}), ok))
                     if args.collect and ok == "y":
                         if hold is None:
                             print("쥠 감지가 안 되어 저장 안 함 (시도가 언제 끝났는지 알 수 없음)")

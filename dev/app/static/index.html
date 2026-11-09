@@ -2,54 +2,106 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1b1e24">
   <title>책상 정리 로봇</title>
-  <style>
-    body { font-family: sans-serif; margin: 16px; max-width: 900px; }
-    #cams { display: flex; gap: 8px; flex-wrap: wrap; }
-    #cams img { width: 100%; max-width: 440px; border-radius: 8px; background: #ddd; }
-    #message { font-size: 1.3em; margin: 12px 0; }
-    button { font-size: 1.1em; padding: 10px 18px; margin: 4px; border-radius: 8px; }
-    #estop { background: #d32f2f; color: white; }
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>책상 정리 로봇</h1>
-  <div id="cams">
-    <img src="/video/head" alt="책상 전체 카메라">
-    <img src="/video/wrist" alt="로봇 손 카메라">
+  <header class="top">
+    <h1>책상 정리 로봇</h1>
+    <span class="conn waiting" id="conn" role="status">연결 중</span>
+    <a class="link" href="settings.html">설정</a>
+  </header>
+
+  <main>
+    <div class="offline-banner" id="offline" role="alert">
+      로봇과 연결이 끊겼어요. 멈췄는지 확인할 수 없어요. 로봇에 가까이 가지 말고 전원과 와이파이를 확인해 주세요. 자동으로 다시 연결할게요.
+    </div>
+
+    <!-- 휴대폰에서도 상태와 다음 조작이 영상보다 먼저 보인다. -->
+    <div class="overview">
+      <section class="card status" aria-label="로봇의 현재 상태">
+        <div class="state-row">
+          <span class="badge" id="badge">확인 중</span>
+          <span class="chip" id="step" hidden></span>
+          <span class="chip" id="attempt" hidden></span>
+        </div>
+        <p class="message" id="message" role="status">로봇 상태를 확인하고 있어요.</p>
+        <p class="next-action" id="next-action">연결되면 정리를 시작할 수 있어요.</p>
+        <div class="counts">
+          <div class="count ok"><b id="done">—</b><span>정리 완료</span></div>
+          <div class="count bad"><b id="failed">—</b><span>직접 정리</span></div>
+          <div class="count"><b id="remaining">—</b><span>정리할 물건</span></div>
+        </div>
+        <div class="bar" id="progress" role="progressbar" aria-label="이번 정리 진행" aria-valuetext="상태 확인 중"><i id="bar-fill"></i></div>
+        <p class="hint progress-note" id="progress-note">정리를 시작하면 물건 수를 알려 드려요.</p>
+      </section>
+
+      <section class="card actions" aria-labelledby="controls-title">
+        <h2 id="controls-title">정리하기</h2>
+        <div class="controls">
+          <button id="start" class="primary" disabled>정리 시작</button>
+          <button id="pause" disabled>일시정지</button>
+          <button id="resume" disabled>계속</button>
+          <button id="stop" disabled>중지</button>
+        </div>
+        <p class="hint controls-hint" id="controls-hint">먼저 로봇과 연결하고 있어요.</p>
+        <p class="command-msg" id="command-msg" role="status" hidden></p>
+      </section>
+    </div>
+
+    <section class="cams" aria-label="카메라 화면">
+      <div class="cam">
+        <h2>책상 전체</h2>
+        <div class="cam-frame stale">
+          <img id="cam-head" alt="책상 전체를 보는 카메라 화면">
+          <div class="overlay" id="overlay"></div>
+          <span class="cam-note" id="note-head" role="status">영상을 불러오고 있어요.</span>
+        </div>
+      </div>
+      <div class="cam">
+        <h2>로봇 손</h2>
+        <div class="cam-frame stale">
+          <img id="cam-wrist" alt="로봇 손끝 카메라 화면">
+          <span class="cam-note" id="note-wrist" role="status">영상을 불러오고 있어요.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card notis-card" aria-labelledby="notis-title">
+      <h2 id="notis-title">알림</h2>
+      <details class="important-notis" id="important-notis" hidden>
+        <summary id="important-summary">주의·오류 알림</summary>
+        <p class="hint">이전에 받은 알림도 포함해요. 현재 상태는 화면 위에서 확인해 주세요.</p>
+        <ul class="notis" id="important-list" tabindex="0" aria-label="주의·오류 알림 내역"></ul>
+      </details>
+      <p class="important-preview" id="important-preview" hidden></p>
+      <p class="hint" id="notis-caption">아직 알림이 없어요.</p>
+      <ul class="notis" id="notis" tabindex="0" aria-label="최근 알림"></ul>
+      <button class="notis-toggle" id="notis-toggle" aria-expanded="false" aria-controls="notis" hidden>전체 알림 보기</button>
+    </section>
+  </main>
+
+  <div class="estop-bar">
+    <p id="emergency-hint">연결을 확인해야 비상정지를 보낼 수 있어요</p>
+    <div class="emergency-buttons">
+      <button id="estop" disabled>비상정지</button>
+      <button id="release" disabled hidden>물건 놓기</button>
+    </div>
   </div>
-  <div id="message">연결 중...</div>
-  <div id="progress"></div>
-  <button id="start">정리 시작</button>
-  <button id="pause">일시정지</button>
-  <button id="resume">계속</button>
-  <button id="stop">중지</button>
-  <button id="estop">비상정지</button>
-  <button id="release">물건 놓기</button>
-  <ul id="notifications"></ul>
-  <script>
-    for (const id of ["start", "pause", "resume", "stop", "estop"]) {
-      document.getElementById(id).onclick = () => fetch("/api/" + id, { method: "POST" });
-    }
-    document.getElementById("release").onclick = () => {
-      if (confirm("물건이 그 자리에서 떨어져요. 아래가 비어 있나요?")) fetch("/api/release", { method: "POST" });
-    };
-    async function refresh() {
-      const s = await (await fetch("/api/status")).json();
-      document.getElementById("message").textContent = s.message;
-      const p = s.progress;
-      document.getElementById("progress").textContent = `정리 ${p.done} · 실패 ${p.failed} · 남음 ${p.remaining}`;
-      document.getElementById("start").disabled = ["cleaning", "paused"].includes(s.state);
-      document.getElementById("pause").disabled = s.state !== "cleaning";
-      document.getElementById("resume").disabled = s.state !== "paused";
-      document.getElementById("stop").disabled = !["cleaning", "paused"].includes(s.state);
-      document.getElementById("release").disabled = s.state !== "estop";
-      document.getElementById("notifications").innerHTML =
-        s.notifications.slice(-5).reverse().map(n => `<li>${n.time} ${n.text}</li>`).join("");
-    }
-    setInterval(refresh, 500);
-    refresh();
-  </script>
+
+  <dialog class="ask" id="ask" aria-labelledby="ask-title" aria-describedby="ask-text">
+    <div class="ask-body">
+      <h2 class="ask-title" id="ask-title">물건을 놓을까요?</h2>
+      <p class="ask-text" id="ask-text"></p>
+    </div>
+    <div class="ask-btns">
+      <button class="ask-cancel" autofocus>취소</button>
+      <button class="ask-ok danger">놓기</button>
+    </div>
+  </dialog>
+  <script src="app.js"></script>
+  <script>startMain();</script>
 </body>
 </html>

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1b1e24">
+  <title>설정 · 책상 정리 로봇</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="settings-page">
+  <header class="top">
+    <h1>설정</h1>
+    <span class="conn waiting" id="conn" role="status">연결 중</span>
+    <a class="link" id="back" href="index.html">정리 화면</a>
+  </header>
+  <main>
+    <div class="locked show" id="locked" role="status">로봇 상태와 저장된 설정을 확인하고 있어요.</div>
+    <form class="card" id="form" onsubmit="return false">
+      <fieldset class="field">
+        <legend>정리할 물건</legend>
+        <p class="hint">선택한 물건만 정리해요.</p>
+        <div class="checks" id="objects"></div>
+      </fieldset>
+      <fieldset class="field">
+        <legend>속도</legend>
+        <p class="hint">처음 쓰거나 주변에 사람이 있으면 느리게 두는 편이 안전해요.</p>
+        <div class="radios">
+          <label class="radio"><input type="radio" name="speed" value="normal" disabled><span>보통</span></label>
+          <label class="radio"><input type="radio" name="speed" value="slow" disabled><span>느리게</span></label>
+        </div>
+      </fieldset>
+      <div class="field">
+        <label for="retries">다시 시도 횟수</label>
+        <p class="hint">물건을 집지 못했을 때 몇 번 더 해볼지 정해요.</p>
+        <select id="retries" disabled>
+          <option value="0">다시 시도하지 않기</option>
+          <option value="1">1번 더</option>
+          <option value="2">2번 더</option>
+          <option value="3">3번 더</option>
+        </select>
+      </div>
+      <div class="save-row">
+        <p class="save-msg" id="save-msg" role="status">저장된 설정을 불러오고 있어요.</p>
+        <button id="save" class="primary" type="button" disabled>설정 저장</button>
+      </div>
+    </form>
+    <section class="card">
+      <h2>수거함 안내</h2>
+      <p class="hint">아래와 같이 나눠 담아요. 통 위치를 바꾸려면 관리자에게 알려 주세요.</p>
+      <table class="bins">
+        <thead><tr><th scope="col">물건</th><th scope="col">들어가는 통</th></tr></thead>
+        <tbody id="bins"></tbody>
+      </table>
+    </section>
+  </main>
+  <div class="estop-bar">
+    <p id="emergency-hint" role="status">설정 중에도 위험하면 바로 누르세요</p>
+    <div class="emergency-buttons"><button id="estop" disabled>비상정지</button></div>
+  </div>
+  <dialog class="ask" id="ask" aria-labelledby="ask-title" aria-describedby="ask-text">
+    <div class="ask-body">
+      <h2 class="ask-title" id="ask-title">저장하지 않고 나갈까요?</h2>
+      <p class="ask-text" id="ask-text"></p>
+    </div>
+    <div class="ask-btns">
+      <button class="ask-cancel" autofocus>계속 수정</button>
+      <button class="ask-ok danger">저장하지 않고 나가기</button>
+    </div>
+  </dialog>
+  <script src="app.js"></script>
+  <script>startSettings();</script>
+</body>
+</html>

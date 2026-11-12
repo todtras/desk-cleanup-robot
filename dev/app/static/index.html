@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1b1e24">
+  <meta name="theme-color" content="#ffffff">
   <title>책상 정리 로봇</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -21,7 +21,7 @@
 
     <!-- 휴대폰에서도 상태와 다음 조작이 영상보다 먼저 보인다. -->
     <div class="overview">
-      <section class="card status" aria-label="로봇의 현재 상태">
+      <section class="status" aria-label="로봇의 현재 상태">
         <div class="state-row">
           <span class="badge" id="badge">확인 중</span>
           <span class="chip" id="step" hidden></span>
@@ -38,7 +38,7 @@
         <p class="hint progress-note" id="progress-note">정리를 시작하면 물건 수를 알려 드려요.</p>
       </section>
 
-      <section class="card actions" aria-labelledby="controls-title">
+      <section class="actions" aria-labelledby="controls-title">
         <h2 id="controls-title">정리하기</h2>
         <div class="controls">
           <button id="start" class="primary" disabled>정리 시작</button>
@@ -69,8 +69,9 @@
       </div>
     </section>
 
+    <!-- 알림은 터미널 창처럼: 신호등 점 3개 + 고정폭 글씨 (DESIGN.md의 terminal-card) -->
     <section class="card notis-card" aria-labelledby="notis-title">
-      <h2 id="notis-title">알림</h2>
+      <div class="term-head"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><h2 id="notis-title">알림</h2></div>
       <details class="important-notis" id="important-notis" hidden>
         <summary id="important-summary">주의·오류 알림</summary>
         <p class="hint">이전에 받은 알림도 포함해요. 현재 상태는 화면 위에서 확인해 주세요.</p>

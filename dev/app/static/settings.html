@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1b1e24">
+  <meta name="theme-color" content="#ffffff">
   <title>설정 · 책상 정리 로봇</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -15,7 +15,7 @@
   </header>
   <main>
     <div class="locked show" id="locked" role="status">로봇 상태와 저장된 설정을 확인하고 있어요.</div>
-    <form class="card" id="form" onsubmit="return false">
+    <form class="settings-form" id="form" onsubmit="return false">
       <fieldset class="field">
         <legend>정리할 물건</legend>
         <p class="hint">선택한 물건만 정리해요.</p>
@@ -44,7 +44,7 @@
         <button id="save" class="primary" type="button" disabled>설정 저장</button>
       </div>
     </form>
-    <section class="card">
+    <section class="bins-section">
       <h2>수거함 안내</h2>
       <p class="hint">아래와 같이 나눠 담아요. 통 위치를 바꾸려면 관리자에게 알려 주세요.</p>
       <table class="bins">

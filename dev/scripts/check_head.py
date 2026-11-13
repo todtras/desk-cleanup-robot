@@ -1,4 +1,4 @@
-"""head 카메라가 학습 때 구도와 같은지 실시간 확인. 기준(configs/robot/head_ref.png)에 지금 화면을 겹쳐 브라우저로 보여주고 어긋남(px)을 표시.
+"""head 카메라가 학습 때 구도와 같은지 실시간 확인. 기준(configs/robot/head_ref_1106.png)에 지금 화면을 겹쳐 브라우저로 보여주고 어긋남(px)을 표시.
 사용 (dev 폴더에서, 측정·녹화 전 매번): python scripts/check_head.py [카메라 번호] → http://localhost:8001   Ctrl+C = 종료 (켜 두면 카메라를 잡고 있음)
 기준 다시 만들기: --make_ref (녹화 영상 프레임들의 중앙값이라 팔·물체가 지워짐)
 venv의 opencv가 headless라 cv2.imshow 창을 못 띄움 → dashboard.py처럼 브라우저로 스트리밍
@@ -16,12 +16,15 @@ import numpy as np
 import yaml
 
 os.chdir(Path(__file__).resolve().parent.parent)
-REF = Path("configs/robot/head_ref.png")
+REF = Path("configs/robot/head_ref_1106.png")  # 11/6 구도 (v4·v5 시연·기준 측정). 10/30 원래 학습 구도는 head_ref.png
 PATCHES = {"bins": (0, 130), "base": (220, 20), "right": (440, 280)}  # 왼쪽 위 좌표, 크기 200x200
 SIZE = 200
 OK_PX = 2.0  # 약 7px 어긋남 + 초점 변화에서 정책이 전반적으로 실패했음 (10/30)
 WINDOW = cv2.createHanningWindow((SIZE, SIZE), cv2.CV_32F)
 PORT = 8001
+# 테이프 붙일 측정 위치 (head 화면 px, 물체 YOLO 박스 중심). 11/6 물병·지우개 10만 측정 위치의 평균을 격자로 반듯하게 맞춤 (차이 수 px).
+# 줄 N/M/F = 로봇에서 가까운(화면 위)/가운데/먼(화면 아래), L/C/R = 로봇 왼쪽/가운데/오른쪽 (로봇 왼쪽 = 화면 오른쪽, 실험기록 표와 같은 기준)
+MARKS = {(x, y): f"{r}-{c}" for r, y in (("N", 240), ("M", 345), ("F", 395)) for c, x in (("L", 460), ("C", 305), ("R", 172))}
 
 
 def shifts(ref, now):
@@ -52,8 +55,9 @@ def make_ref():
         for path in sorted(glob.glob(f"outputs/datasets/pick_{d}_v2/videos/observation.images.head/chunk-*/file-*.mp4")):
             with av.open(path) as c:
                 frames += [f.to_ndarray(format="bgr24") for i, f in enumerate(c.decode(video=0)) if i % 400 == 0]
-    cv2.imwrite(str(REF), np.median(frames, axis=0).astype(np.uint8))
-    print(f"{REF}: 프레임 {len(frames)}장의 중앙값")
+    ref = Path("configs/robot/head_ref.png")  # v2(10/30) 영상의 중앙값이라 10/30 기준 파일에 씀 (11/6 기준을 덮지 않게)
+    cv2.imwrite(str(ref), np.median(frames, axis=0).astype(np.uint8))
+    print(f"{ref}: 프레임 {len(frames)}장의 중앙값")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -108,6 +112,10 @@ def capture_loop():
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        for (x, y), label in MARKS.items():
+            c = (0, 255, 255) if label.startswith("M") else (200, 200, 200)  # 노랑 = 스텝 비교 3곳 (가운데 줄)
+            cv2.circle(view, (x, y), 12, c, 2)
+            cv2.putText(view, label, (x + 15, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, c, 1)
         cv2.putText(view, Handler.last, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
         Handler.jpg = cv2.imencode(".jpg", view)[1].tobytes()
 

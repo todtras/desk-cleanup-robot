@@ -1,8 +1,10 @@
 """시연 물체 위치 지도. 에피소드 첫 head 프레임에서 YOLO로 물체를 찾아 점으로 표시 → 어디가 부족한지 보고 보강
 사용 (dev 폴더에서): python scripts/demo_map.py pick_eraser_v2 pick_paper_v2   → outputs/demo_map/<이름>.jpg
 녹화 중 실시간: python scripts/record.py ... --dataset.repo_id=local/pick_eraser_v2 --resume=true --coverage
+빨간 X = 정책이 실패한 위치 (run_log.csv, 11/6 이후). 새 보강은 pick_<물체>_demo1113처럼 새 이름으로 → 기존 v2·demo 위치도 함께 표시
 위치는 outputs/demo_map/<이름>.json에 저장해 다음부터 새 에피소드만 탐지
 ponytail: 에피소드 재녹화·삭제로 번호가 바뀌면 json을 지우고 다시 만들 것"""
+import csv
 import json
 import sys
 import threading
@@ -17,8 +19,8 @@ from ultralytics import YOLO
 
 from run_auto import V2_TO_NOW, detect_all  # 정책 실행과 같은 탐지 설정. run_auto가 작업 폴더를 dev로 맞춤
 
-WS = (170, 230, 540, 430)  # 작업 구역 (head 화면 x1, y1, x2, y2). progress.md의 시작 위치 범위. 구역을 바꾸면 여기만
-COLS, ROWS, LOW = 6, 4, 4  # 격자, 이 개수 미만인 칸은 붉게
+WS = (130, 230, 540, 430)  # 작업 구역 (head 화면 x1, y1, x2, y2). 11/13 왼쪽(로봇 오른쪽)을 170 → 130으로 넓힘: 측정 칸이 시연 구역 경계에 걸쳐 실패가 몰렸음. 수거함 선은 x 약 100
+COLS, ROWS, LOW = 7, 4, 4  # 격자, 이 개수 미만인 칸은 붉게
 OUT = Path("outputs/demo_map")
 PORT = 8010  # 녹화 중 실시간 지도 주소 http://localhost:8010 (venv의 opencv에 창 기능이 없어 브라우저로 표시)
 
@@ -55,8 +57,17 @@ def find(model, rgb, cls):
     return [(x1 + x2) // 2, (y1 + y2) // 2]
 
 
-def draw(bgr, name, pts, fails):
-    """BGR 화면 위에 격자, 칸별 개수, 점을 그림"""
+def policy_fails(cls, since="2026-11-06"):
+    """정책 실패 위치 [(x, y)] (run_log.csv, since 이후 = 지금 카메라 구도). 시연을 보강할 곳 찾기용"""
+    log = Path("outputs/run_log.csv")
+    if not log.exists():
+        return []
+    return [(int(r["x"]), int(r["y"])) for r in csv.DictReader(log.open(encoding="utf-8-sig"))
+            if r["class"] == cls and r["success"] == "n" and r["time"] >= since and r["x"].isdigit() and r["y"].isdigit()]
+
+
+def draw(bgr, name, pts, fails, fail_pts=()):
+    """BGR 화면 위에 격자, 칸별 개수, 점을 그림. fail_pts = 정책이 실패한 위치 (빨간 X)"""
     img, g = bgr.copy(), grid(pts)
     w, h = (WS[2] - WS[0]) / COLS, (WS[3] - WS[1]) / ROWS
     tint = img.copy()
@@ -71,10 +82,13 @@ def draw(bgr, name, pts, fails):
             a, b = (int(WS[0] + c * w), int(WS[1] + r * h)), (int(WS[0] + (c + 1) * w), int(WS[1] + (r + 1) * h))
             cv2.rectangle(img, a, b, (255, 255, 255), 1)
             cv2.putText(img, str(g[r, c]), (a[0] + 4, a[1] + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    for x, y in fail_pts:
+        cv2.line(img, (x - 6, y - 6), (x + 6, y + 6), (0, 0, 255), 2, cv2.LINE_AA)
+        cv2.line(img, (x - 6, y + 6), (x + 6, y - 6), (0, 0, 255), 2, cv2.LINE_AA)
     for i, (x, y) in enumerate(pts):
         cv2.circle(img, (x, y), 4, (0, 255, 255) if i == len(pts) - 1 else (0, 255, 0), -1)
         cv2.circle(img, (x, y), 4, (0, 0, 0), 1)
-    cv2.putText(img, f"{name}: {len(pts)} found, {fails} missed  (image right = robot left)", (8, 22),
+    cv2.putText(img, f"{name}: {len(pts)} found, {fails} missed, red X = {len(fail_pts)} policy fails  (image right = robot left)", (8, 22),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
     return img
 
@@ -107,9 +121,11 @@ class Live:
         self.model = YOLO("models/best.pt")
         pos, _ = load(name, self.model)
         self.pts = [p for p in pos.values() if p]
-        if name.endswith("_demo"):  # 보강 녹화: 기존 시연 위치도 함께 표시 → 정말 빈 곳을 채움
+        if "_demo" in name:  # 보강 녹화 (pick_<물체>_demo, _demo1113 등): 기존 시연 위치도 함께 표시 → 정말 빈 곳을 채움
             base, _ = load(f"pick_{self.cls}_v2", self.model)
-            self.pts = [[x + V2_TO_NOW[0], y + V2_TO_NOW[1]] for x, y in filter(None, base.values())] + self.pts
+            old = [] if name == f"pick_{self.cls}_demo" else [p for p in load(f"pick_{self.cls}_demo", self.model)[0].values() if p]
+            self.pts = [[x + V2_TO_NOW[0], y + V2_TO_NOW[1]] for x, y in filter(None, base.values())] + old + self.pts
+        self.fail_pts = policy_fails(self.cls)
         self.fails = sum(p is None for p in pos.values())
         self.mark_next, self.last_found, self.jpg = False, None, None
 
@@ -141,7 +157,7 @@ class Live:
                         self.pts.append(p)
                     else:
                         self.fails += 1
-                self.jpg = cv2.imencode(".jpg", draw(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), self.name, self.pts, self.fails))[1].tobytes()
+                self.jpg = cv2.imencode(".jpg", draw(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), self.name, self.pts, self.fails, self.fail_pts))[1].tobytes()
             except Exception as e:
                 print(f"[demo_map] {type(e).__name__}: {e}", flush=True)
             time.sleep(0.1)  # 10fps면 충분. 녹화 CPU를 뺏지 않게
@@ -179,12 +195,12 @@ class Live:
 
 
 if __name__ == "__main__":
-    assert grid([(170, 230), (539, 429), (1000, 0)]).sum() == 3 and grid([(170, 230)])[0, 0] == 1 and grid([(539, 429)])[-1, -1] == 1
+    assert grid([(WS[0], WS[1]), (WS[2] - 1, WS[3] - 1), (1000, 0)]).sum() == 3 and grid([(WS[0], WS[1])])[0, 0] == 1 and grid([(WS[2] - 1, WS[3] - 1)])[-1, -1] == 1
     model = YOLO("models/best.pt")
     for name in sys.argv[1:]:
         pos, rgb = load(name, model)
         pts = [p for p in pos.values() if p]
         missed = [e for e, p in pos.items() if p is None]
         path = OUT / f"{name}.jpg"
-        cv2.imwrite(str(path), draw(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), name, pts, len(missed)))
+        cv2.imwrite(str(path), draw(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), name, pts, len(missed), policy_fails(name.split("_")[1])))
         print(f"{name}: {len(pos)} 에피소드, 찾음 {len(pts)}, 못 찾음 {missed} → {path}\n{grid(pts)}")

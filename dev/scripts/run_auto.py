@@ -1,6 +1,7 @@
 """자율 실행: YOLO로 물체 판별 → 물체별 ACT 정책이 집어서 살짝 들어올림 → (쥠 감지) poses.json 자세로 수거함까지 → 놓고 home. 물체가 없을 때까지 반복.
 사용 (dev 폴더에서): python scripts/run_auto.py [--seconds 20] [--device cpu] [--fps 15] [--n_action_steps 40]
-- --n_action_steps: 작게(예: 40) 하면 물체 가까이서 다시 보고 위치를 보정 (빗나갈 때 시험)
+- --ver v2|v3|v4|v4b|v5|v5t + --step: 체크포인트 고르기. 예) v5 26만: --ver v5 --step 260000 (v3는 지우개·종이만, v4 지우개는 v4a)
+- --n_action_steps: 작게(예: 40) 하면 물체 가까이서 다시 보고 위치를 보정 (빗나갈 때 시험). 100 40처럼 여러 개면 예측 순서대로 (첫 예측만 길게 → 출발 움찔거림 없앰)
 - 좌우 회전 보정: 기본으로 물체 위치(YOLO 박스 x)에 따라 PAN_FIT 적용 (양 끝에서 바깥쪽으로 더 도는 버릇 상쇄). --no_pan_fit으로 끄기,
   --pan_offset 값을 주면 그 값으로 고정
 - --smooth: 예측 동작 평활 (기본 0.3, 1이면 끔). 뚝뚝 끊기면 낮추고, 너무 굼뜨면 올림
@@ -9,6 +10,9 @@
 - 전체 종료 = 성공 질문에 q, 급하면 Ctrl+C
 - 시도마다 성공 여부(y/n)와 실패 이유(번호 또는 직접 입력)를 입력받아 outputs/run_log.csv에 기록, 클래스별 성공률 출력 (로봇 없이 보기: --stats)
 - 카메라 번호는 record_pick.yaml 그대로 씀 (실행마다 head/wrist가 바뀔 수 있으니 시작 화면 확인)
+- 측정용이라 기본은 쥐고 들어 올린 뒤 그 자리에서 놓고 home. 수거함까지 옮기려면 --bin (웹 앱은 항상 수거함까지)
+- --approach: YOLO 위치 → 접근 자세(approach_map.py로 시연에서 맞춘 식)로 먼저 옮기고 ACT가 이어서 집음 (가장자리 실패 보완 시험)
+- --use_policy tape --obj tape2: 교차 시험. 놓은 물체와 상관없이 지정한 정책으로 집음 (새 물체 일반화 확인). YOLO가 못 찾아도 Enter로 실행. 기록 outputs/run_log_cross.csv
 - --knn: 비교 기준. 정책 없이 물체 위치와 가장 가까운 시연(_v2, _demo)의 동작을 그대로 재생. 기록은 outputs/run_log_knn.csv
   시연 위치 표가 먼저 있어야 함: python scripts/demo_map.py pick_tape_v2 pick_tape_demo ...
 - --collect: 데이터 모으기 (리더 암 연결 필요). 기록은 outputs/run_log_collect.csv (기준 성공률과 섞이지 않음)
@@ -65,27 +69,54 @@ INTERVENE = ("i", "I", "ㅑ")  # 교정 키 (한글 입력 상태면 ㅑ로 들�
 ALIGN_MAX = 8.0  # 리더-팔로워 차이가 이 안이어야 넘겨받음. 쥔 물체를 떨어뜨리지 않을 정도로. 실물 보고 조정
 TAKEOVER_FPS, TAKEOVER_MAX_S = 30, 40  # 시연과 같은 30Hz. 상한은 메모리 보호용 (초당 약 55MB)
 REASONS = {"1": "탐지 실패", "2": "빗나감-왼쪽", "3": "빗나감-오른쪽", "4": "빗나감-앞뒤", "9": "너무 뻗음(앞)", "0": "덜 뻗음(뒤)",
-           "5": "쥐었다 놓침", "6": "쥠 감지 안 됨", "7": "수거함 잘못", "8": "멈춤/시간 초과"}
+           "5": "쥐었다 놓침", "6": "쥠 감지 안 됨", "7": "수거함 잘못", "8": "멈춤/시간 초과",
+           "h": "높이-덜 내려감"}  # 11/13 추가: 전엔 높이 실패가 앞뒤(9/0)에 섞여 기록됨
 # 빗나감 방향 = 그리퍼가 물체보다 어느 쪽으로 갔나, 로봇 기준 (로봇 왼쪽 = head 화면 오른쪽). 앞뒤 = 로봇에서 멀게/가깝게
 REASONS_HELP = " ".join(f"{k}={v}" for k, v in REASONS.items())
-CKPT = "outputs/train/act_pick_{}_v2/checkpoints/{}/pretrained_model"  # v2 = 2026-10-30 새 환경 데이터. 서버에서 scp로 받은 스텝 폴더
-V3 = {"eraser", "paper"}  # v3(약한 위치 보강 녹화)가 있는 물체. --v3로 선택
+REASONS["ㅗ"] = REASONS["h"]  # 한글 입력 상태에서 h
+CKPT = "outputs/train/act_pick_{}/checkpoints/{}/pretrained_model"  # 서버에서 받은 스텝 폴더. v2 = 2026-10-30 새 환경 데이터
+V3 = {"eraser", "paper"}  # v3(약한 위치 보강 녹화)가 있는 물체
+VERS = ("v2", "v3", "v4", "v4b", "v5", "v5t", "v6t")  # --ver. v4 = 칸당 시연 2~3개, v5 = 약 4개 (11/6 녹화), v5t = v5 앞 대기 자르고 v5 10만에서 이어 학습 (스텝 010000 = 10만+1만)
 
 
-def ckpt_path(name, step, v3=False):
-    return CKPT.format(name, step).replace("_v2/", "_v3/") if v3 and name in V3 else CKPT.format(name, step)
+def ver_dir(name, ver):
+    """물체별 실제 폴더 버전. v3는 지우개·종이만 있어 나머지는 v2, 지우개 v4는 A/B 두 개(v4 = v4a, v4b), v4b는 지우개 외엔 v4.
+    ver=True/False는 예전 --v3 호출 (웹 앱)과 호환"""
+    ver = "v3" if ver is True else ver or "v2"
+    if ver == "v3" and name not in V3:
+        return "v2"
+    if name == "eraser" and ver == "v4":
+        return "v4a"
+    return "v4" if ver == "v4b" and name != "eraser" else ver
 
 
-def step_label(name, step, v3=False):
-    """기록·보정표의 스텝 이름. v3는 'v3-050000'으로 구분 (v2 스텝용 보정값이 적용되거나 기록이 섞이지 않게)"""
-    return f"v3-{step}" if v3 and name in V3 else step
+PART_VER, PART_STEP = "k15", "020000"  # 부품 정책 버전·스텝 (--part_ver, --part_step으로 바꿈)
 
 
-PLAN = {"tape": "office", "bottle": "trash", "pen": "pen", "eraser": "pen", "paper": "trash"}  # YOLO 클래스 → 수거함 (정책은 act_pick_<클래스>)
+def ckpt_path(name, step, ver="v2"):
+    if name in PART_POLICY:  # 부품은 사무용품 버전·스텝과 따로
+        return CKPT.format(f"{PART_POLICY[name]}_{PART_VER}", PART_STEP)
+    return CKPT.format(f"{name}_{ver_dir(name, ver)}", step)
+
+
+def step_label(name, step, ver="v2"):
+    if name in PART_POLICY:
+        return f"{PART_VER}-{PART_STEP}"
+    """기록·보정표의 스텝 이름. v2 외에는 'v3-050000'처럼 구분 (v2 스텝용 보정값이 적용되거나 기록이 섞이지 않게)"""
+    v = ver_dir(name, ver)
+    return step if v == "v2" else f"{v}-{step}"
+
+
+PLAN = {"tape": "office", "bottle": "trash", "pen": "pen", "eraser": "pen", "paper": "trash",
+        "stepS": "pen", "stepM": "pen", "stepL": "pen"}  # ponytail: 부품 수거함(A·B·C) 자리를 정하면 bin_partA 등 자세 저장 후 바꿀 것
+PART_POLICY = {"stepS": "step", "stepM": "step", "stepL": "step"}  # 계단 부품 3종은 정책 하나 (act_pick_step_<--part_ver>)  # YOLO 클래스 → 수거함 (정책은 act_pick_<클래스>)
 EMPTY_GRIP = 2.5  # 그리퍼가 이보다 닫혀 있으면 빈손 (펜을 쥐어도 3.9). 그리퍼 다시 캘리브레이션하면 다시 볼 것
+EMPTY_GRIP_BY = {"stepS": 1.4, "stepM": 1.4, "stepL": 1.4}
+LIFT_EXTRA = {"stepS": 15, "stepM": 15, "stepL": 15}  # 쥔 뒤 어깨를 이만큼(도) 더 들어 올림. 부품 시연은 쥔 뒤 5도만 들어서(펜 15.5, 지우개 12) 정책도 거의 안 듦 (11/13)  # 얇은 부품은 쥐어도 1.7 (시연 45개 모두), 빈손 끝까지 닫으면 약 1
 LIFT_ACTIONS = 30  # 쥔 뒤 정책을 더 돌리는 스텝 수 (= 시연 1초 분량. 시연에서 쥔 직후 들어올리는 동작)
 SEND_HZ = 60  # 모터에 보내는 빈도 (텔레옵과 같게). 정책 스텝 사이는 시간 기준 직선 보간
 FPS, CONF, IMGSZ = 30, 0.3, 640  # head 첫 프레임 기준 물병 탐지: 960/0.5 → 18/31, 640/0.3 → 30/31 (새 카메라 구도 0/19 → 11/19)
+CLASS_CONF = {"eraser": 0.6}  # 책상의 위치 표시 테이프를 지우개로 잡음 (11/13). 실제 지우개는 기록 21회 모두 0.86 이상. 펜은 0.47까지 있어 전체는 0.3 유지
 PAN_OFFSET = {}  # 클래스별 shoulder_pan 보정 (실물로 맞춤). 예전 tape 2.0은 v1 30k 기준이라 v2에서 뺌. 체크포인트 바꾸면 다시 맞출 것
 # ---------- 위치별 보정 (영점 조절) ----------
 # 정책은 물체가 양 끝·가까운 곳에 있을 때 일정하게 빗나감 → 물체 위치(YOLO 박스 중심 x)마다 보정값을 더함.
@@ -181,27 +212,43 @@ def detect_all(model, head_rgb, names):
     boxes = model.predict(img, imgsz=IMGSZ, conf=CONF, verbose=False)[0].boxes  # imgsz 생략하면 학습값 960이 쓰임
     return [(model.names[int(c)], float(p), tuple(int(v) for v in xyxy))
             for c, p, xyxy in zip(boxes.cls, boxes.conf, boxes.xyxy)
-            if model.names[int(c)] in names and (xyxy[0] + xyxy[2]) / 2 >= BIN_X]
+            if model.names[int(c)] in names and (xyxy[0] + xyxy[2]) / 2 >= BIN_X and p >= CLASS_CONF.get(model.names[int(c)], CONF)]
 
 
 def key():
     return msvcrt.getwch() if msvcrt.kbhit() else None
 
 
-def grasped(g, fps):
+def grasped(g, fps, preopened=False, empty=EMPTY_GRIP):
     """그리퍼 관측값 기록 g로 '물체를 쥐었다' 판단: 가장 닫힌 값보다 5 이상 열었다가 → 그 뒤 최대에서 5 이상 닫힌 채 0.5초 멈춤.
     (home 그리퍼가 13.9로 반쯤 열려 있어 시작하자마자 닫히는 건 '여는 동작'이 없으니 무시)
     녹화 데이터 기준: 최대 열림 17~32 → 쥔 값 테이프 6, 물병 15.5, 펜 3.9, 빈손으로 끝까지 닫으면 약 1"""
     n = max(3, round(fps * 0.5))
     if len(g) <= n:
         return False
+    if preopened:  # 접근 모드: 이미 연 채로 시작해 '여는 동작'이 기록에 없음 (11/13, 쥐고도 감지 못해 계속 들어 올림)
+        return (max(g[:-n]) - g[-1] > 5 and max(g[-n:]) - min(g[-n:]) < 0.5 and g[-1] > empty)
     lo = g[0]
     for j, x in enumerate(g[:-n]):
         lo = min(lo, x)
         if x - lo > 5:  # 여는 동작 시작
             return (max(g[j:-n]) - g[-1] > 5 and max(g[-n:]) - min(g[-n:]) < 0.5
-                    and g[-1] > EMPTY_GRIP)  # 끝까지 닫혔으면 빈손
+                    and g[-1] > empty)  # 끝까지 닫혔으면 빈손
     return False
+
+
+MASK_PAD = 10  # 가릴 때 박스 바깥 여유(px). 그림자·박스 오차까지 덮게
+
+
+def mask_others(img, boxes):
+    """head 화면에서 다른 물체 박스 자리를 주변 책상으로 메움 (OpenCV 인페인팅, 640x480에서 약 12ms).
+    시연은 책상에 물체 하나만 두고 녹화해서, 다른 물체가 보이면 정책이 그쪽으로 끌리거나 흔들림 (11/13, 5종 동시 정리).
+    단색으로 덮으면 사각형 자국이 남아 그것도 방해물처럼 보임 → 인페인팅.
+    ponytail: 팔이 가린 자리를 지나가면 그 부분 팔도 지워짐 → 문제 되면 쥐기 직전엔 가리기를 끄는 식으로"""
+    m = np.zeros(img.shape[:2], np.uint8)
+    for x1, y1, x2, y2 in boxes:
+        m[max(0, y1 - MASK_PAD):y2 + MASK_PAD, max(0, x1 - MASK_PAD):x2 + MASK_PAD] = 255
+    return cv2.inpaint(img, m, 5, cv2.INPAINT_NS)
 
 
 def observe(robot, lock):
@@ -219,7 +266,39 @@ def shift_image(img, dx, dy):
     return cv2.warpAffine(img, np.float32([[1, 0, dx], [0, 1, dy]]), img.shape[1::-1], borderMode=cv2.BORDER_REPLICATE)
 
 
-def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_offset, poll_key=key, extra=None, rec=None):
+SOFT_MIN = 0.33  # 부드러운 출발 시작 비율 (평활 0.3 × 0.33 ≈ 0.1에서 시작해 soft초 동안 0.3까지)
+SOFT_DPS = 60.0  # 부드러운 출발 중 관절별 최대 속도(도/초). 처음엔 20%(12도/초)에서 soft초 동안 60까지. 그래도 빠르면 낮출 것
+IDLE_DEG = 5.0  # 시작 대기 판정: 첫 동작과 팔 5관절 차이 합이 이 안이면 '제자리'
+
+
+def plan_chunks(policy, post, steps, idle_skip=True):
+    """예측마다 실행할 동작 수를 steps 순서대로 (마지막 값 반복). 예) (100, 40): 첫 예측은 100개 끝까지, 이후 40개씩 다시 봄.
+    첫 예측을 길게 하면 출발 직후 다시 볼 때 시작 동작을 처음부터 다시 하는 왕복(움찔거림)이 사라짐 (11/13 물병 v5t 1만, 100이면 사라짐).
+    시작 대기 건너뛰기도 여기서: 실행할 동작이 전부 제자리인 예측이면 앞쪽 대기를 버리고 움직이는 곳부터.
+    11/6 시연은 시작 전에 약 1초 가만히 있던 것이 많아(물병 v2 8/50 → 11/6 33/60) v5가 '처음엔 기다리기'를 배움.
+    v2·v4는 그런 예측이 없어 영향 없음 (11/13 오프라인, 물병 10개 시작 화면). 한 번 정상 예측이 나오면 대기 검사는 끝"""
+    orig, st = type(policy).predict_action_chunk.__get__(policy), {"i": 0, "idle": idle_skip}
+
+    def wrapped(batch):
+        n_exec = steps[min(st["i"], len(steps) - 1)]
+        st["i"] += 1
+        policy.config.n_action_steps = n_exec  # select_action이 이 호출 뒤에 이 값으로 자름
+        chunk, n = orig(batch), 0
+        if st["idle"]:
+            deg = post(chunk[0].clone())  # (100, 6) 도 단위
+            moved = (deg - deg[0]).abs()[:, :5].sum(1) > IDLE_DEG
+            n = int(moved.float().argmax()) if moved.any() else 0
+            n = n if n >= n_exec else 0  # v2도 0.5초쯤 기다리게 배워서 그보다 짧은 대기는 그대로 둠
+            if n:
+                print(f"시작 대기 {n}동작 건너뜀")
+            else:
+                st["idle"] = False
+        return chunk[:, n:]
+
+    policy.predict_action_chunk = wrapped
+
+
+def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_offset, poll_key=key, extra=None, rec=None, steps=None, idle_skip=True, soft=0.0, mask=None, preopened=False, empty=EMPTY_GRIP):
     """정책으로 seconds초 구동. 스페이스로 조기 종료. 물체를 쥐면 LIFT_ACTIONS만큼 더 돌려 들어올린 뒤 끝냄.
     반환: (눌린 키 ' '/'q'/None, 쥐었으면 그때 명령하던 그리퍼 값 아니면 None)
     poll_key: 키 입력 대신 쓸 함수 (웹 UI가 ' '/'q'를 넘김). ESTOP이 켜지면 바로 멈춤
@@ -228,6 +307,7 @@ def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_off
     rec: 리스트를 주면 스텝마다 (관측, 보낸 명령)을 쌓고, 교정 키로도 멈춤"""
     stops = (" ", "q") + (INTERVENE if rec is not None else ())
     policy.reset(); pre.reset(); post.reset()
+    plan_chunks(policy, post, steps or (policy.config.n_action_steps,), idle_skip)  # steps 없으면 (웹 앱) 불러올 때 값 그대로
     lock, stop = threading.Lock(), threading.Event()  # 같은 시리얼 버스를 두 스레드가 씀 → 한 번에 하나만
     obs = observe(robot, lock)
     now = {m: obs[m] for m in features[ACTION]["names"]}
@@ -255,6 +335,10 @@ def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_off
                and not ESTOP.is_set()):
             t = time.perf_counter()
             obs = observe(robot, lock)
+            if mask:  # 다른 물체 가리기 (정책 입력만, 쥠 감지·기록은 그대로)
+                obs["head"] = mask_others(obs["head"], mask)
+                if not g:  # 첫 스텝만
+                    cv2.imwrite("outputs/masked_head.jpg", cv2.cvtColor(obs["head"], cv2.COLOR_RGB2BGR))  # 확인용: 정책이 본 첫 화면
             g.append(obs["gripper.pos"])
             frame = build_dataset_frame(features, obs, prefix=OBS_STR)
             act = make_robot_action(predict_action(frame, policy, torch.device(policy.config.device), pre, post,
@@ -263,13 +347,17 @@ def run_policy(robot, policy, pre, post, features, seconds, fps, smooth, pan_off
             for m, v in (extra or {}).items():  # 그 밖의 관절 보정 (reach_fix: 덜/더 뻗기)
                 act[m] += v
             last = seg[0][1]  # 직전 목표
-            act = {m: last[m] + smooth * (act[m] - last[m]) for m in act}  # 지수 평활: 덜 학습된 ACT의 들쭉날쭉한 예측을 고르게
+            sm = smooth if soft <= 0 else smooth * min(1.0, SOFT_MIN + (1 - SOFT_MIN) * (t - t0) / soft)  # 부드러운 출발: 처음 soft초는 평활을 강하게
+            act = {m: last[m] + sm * (act[m] - last[m]) for m in act}  # 지수 평활: 덜 학습된 ACT의 들쭉날쭉한 예측을 고르게
+            if soft > 0 and t - t0 < soft:  # 부드러운 출발 속도 상한: 평활만으론 첫 시도(모델 예열로 느림) 뒤 시도에서 빠름
+                cap = SOFT_DPS * max(0.2, (t - t0) / soft) / fps  # 한 스텝 최대 이동(도), 20% → 100%
+                act = {m: last[m] + max(-cap, min(cap, act[m] - last[m])) for m in act}
             tn = time.perf_counter()
             seg[0] = (interp(tn), act, tn)  # 지금 보내던 위치에서 새 목표로 (같은 시각 기준이라 뒤로 튀지 않음)
             if rec is not None:
                 rec.append((obs, act))
             calc.append(time.perf_counter() - t)
-            if hold is None and grasped(g, fps):
+            if hold is None and grasped(g, fps, preopened, empty):
                 hold, lift, grip0 = act["gripper.pos"], LIFT_ACTIONS, g[-1]
                 GRASP_POSE.clear()
                 GRASP_POSE.update({m: obs[m] for m in features[ACTION]["names"]})
@@ -403,15 +491,31 @@ class Collector:
             ds.finalize()  # 안 하면 parquet이 깨짐
 
 
-def move_to(robot, target, seconds):
-    """현재 관절값에서 target까지 직선 보간으로 이동"""
+def move_to(robot, target, seconds, ease=False):
+    """현재 관절값에서 target까지 직선 보간으로 이동. ease: 천천히 출발해서 천천히 멈춤 (smoothstep)"""
     start = {k: v for k, v in robot.get_observation().items() if k.endswith(".pos")}
     n = max(1, int(seconds * FPS))
     for i in range(1, n + 1):
         if ESTOP.is_set():
             return
-        robot.send_action({k: start[k] + (target[k] - start[k]) * i / n for k in target})
+        a = i / n
+        a = a * a * (3 - 2 * a) if ease else a
+        robot.send_action({k: start[k] + (target[k] - start[k]) * a for k in target})
         time.sleep(1 / FPS)
+
+
+APPROACH_DEG_S = 40  # 접근 이동 최대 속도 (11/13: 25 → 40, 느리다는 의견) (관절 하나가 초당 이 각도 넘게 돌지 않게). 처음 시험 때 2.5초 고정은 너무 과감했음 (11/13)
+
+
+def approach_move(robot, target):
+    """접근 자세로 두 단계 이동: ① 지금 높이 그대로 좌우 회전·손목 회전·그리퍼만 → ② 팔을 내림. 둘 다 천천히 출발·정지
+    home에서 바로 직선으로 가면 팔이 낮게 휘둘러져 위협적이고 물체를 칠 수 있음"""
+    now = {k: v for k, v in robot.get_observation().items() if k.endswith(".pos")}
+    first = {**now, **{k: target[k] for k in ("shoulder_pan.pos", "wrist_roll.pos", "gripper.pos") if k in target}}
+    for goal in (first, {**now, **target}):
+        cur = {k: v for k, v in robot.get_observation().items() if k.endswith(".pos")}
+        big = max(abs(goal[k] - cur[k]) for k in goal if k != "gripper.pos")
+        move_to(robot, goal, max(0.7, big / APPROACH_DEG_S), ease=True)
 
 
 def release_and_home(robot, bin_name):
@@ -477,31 +581,46 @@ def rotate_old_log(log=None):
 
 def run_meta(args, name):
     """시도마다 남기는 버전·옵션. 보고서에서 어떤 조건의 결과인지 이 칸들로 구분"""
-    return [ckpt_path(name, args.step, args.v3), args.fps, args.n_action_steps, args.smooth, args.seconds, args.yolo, COMMIT]
+    return [ckpt_path(name, args.step, args.ver), args.fps, args.n_action_steps, args.smooth, args.seconds, args.yolo, COMMIT]
 
 
 def main():
-    global LOG, HEAD_SHIFT
+    global LOG, HEAD_SHIFT, PART_VER, PART_STEP
     ap = argparse.ArgumentParser()
     ap.add_argument("--yolo", default="models/best.pt")
-    ap.add_argument("--step", default="010000", help="체크포인트 스텝 폴더 (010000 ~ 100000)")
-    ap.add_argument("--v3", action="store_true", help="지우개·종이는 v3 체크포인트 사용 (나머지 물체는 v2)")
+    ap.add_argument("--step", default="010000", help="체크포인트 스텝 폴더 (010000 ~ 100000, v5는 200000·260000도)")
+    ap.add_argument("--ver", choices=VERS, default="v2", help="데이터 버전. v3는 지우개·종이만(나머지 v2), v4의 지우개는 v4a, v4b는 지우개만 B")
+    ap.add_argument("--v3", dest="ver", action="store_const", const="v3", help="= --ver v3 (예전 명령 호환)")
     ap.add_argument("--stats", action="store_true", help="로봇 없이 run_log.csv 성공률만 출력")
     ap.add_argument("--seconds", type=float, default=20, help="정책 최대 실행 시간 (녹화 episode_time_s와 비슷하게)")
     ap.add_argument("--device", default="cpu")
-    ap.add_argument("--n_action_steps", type=int, default=100, help="ACT 동작 묶음 중 실행할 개수(1~100). 30~50이면 가까이 가서 다시 보고 보정")
+    ap.add_argument("--no_idle_skip", action="store_true", help="시작 대기 건너뛰기 끄기 (비교 영상용: v5 10만이 출발 못 하던 상태 재현)")
+    ap.add_argument("--n_action_steps", type=int, nargs="+", default=[60, 30, 20], help="ACT 동작 묶음 중 실행할 개수(1~100). 30~50이면 가까이 가서 다시 보고 보정. "
+                    "여러 개면 예측 순서대로 (마지막 값 반복). 기본 60 30 20: 첫 예측을 길게 해 출발 움찔거림 없앰, 쥐기 가까이 갈수록 자주 다시 봄 (11/13 확정)")
     ap.add_argument("--pan_offset", type=float, default=None, help="정책 shoulder_pan 출력에 더할 값. 생략하면 클래스별 PAN_OFFSET (늘 한쪽으로 빗나갈 때)")
+    ap.add_argument("--mask_others", action="store_true", help="여러 물체를 둘 때, 정책 입력 head 화면에서 지금 집는 물체 외의 물체를 책상 색으로 가림. 첫 화면은 outputs/masked_head.jpg")
+    ap.add_argument("--soft_start", type=float, default=1.0, help="부드러운 출발: 처음 이 초 동안 평활을 강하게(0.1→0.3) 해서 천천히 출발. 0 = 끔 (11/13 버전 비교 측정은 0). 웹 앱도 1초")
     ap.add_argument("--smooth", type=float, default=0.3, help="동작 평활 (1=끔, 작을수록 부드럽지만 늦게 따라감). 10k 체크포인트 기준 0.3이면 시연 데이터 수준")
     ap.add_argument("--no_pan_fit", action="store_true", help="위치별 좌우 회전 보정(PAN_FIT) 끄기 (비교 시험용)")
     ap.add_argument("--calib", action="store_true", help="보정 모드: 시도마다 빗나간 쪽(좌/우/앞/뒤)을 입력하면 configs/robot/calib.json 보정표가 고쳐짐")
     ap.add_argument("--reach_px", type=float, default=None, help="뻗는 거리 보정: 물체가 이만큼(px) 가까이 있는 것처럼 (+ = 덜 뻗음). 생략하면 보정표(calib.json)")
     ap.add_argument("--pan_scale", type=float, default=1.0, help="PAN_FIT 보정 배율. 실제 로봇 오차가 녹화로 잰 것보다 크면 키움 (outputs/pan_debug.csv 차이가 0에 가깝게)")
     ap.add_argument("--fps", type=float, default=FPS, help="정책 루프 속도. 낮추면 느리게 (시간도 그만큼 늘릴 것: --seconds)")
+    ap.add_argument("--bin", action="store_true", help="쥐면 수거함까지 옮김. 없으면(측정) 쥐고 들어 올린 뒤 그 자리에서 놓고 home (수거함 이동은 웹 앱에서 확인 완료)")
     ap.add_argument("--collect", action="store_true", help="교정(i)·성공 시도 저장 모드. 맨 위 설명 참고")
     ap.add_argument("--knn", action="store_true", help="정책 대신 가장 가까운 시연 재생 (비교 기준). 맨 위 설명 참고")
     ap.add_argument("--knn_from", nargs="+", default=["v2", "demo"], choices=["v2", "demo"], help="--knn에 쓸 시연: v2(10/30), demo(11/6). 날짜별 차이 확인용")
+    ap.add_argument("--approach", action="store_true", help="coarse-to-fine 시험: YOLO 위치로 접근 자세(configs/robot/approach_fit_lead<N>.json, approach_map.py)까지 먼저 옮긴 뒤 ACT가 이어서 집음. 기록은 run_log_approach.csv")
+    ap.add_argument("--approach_lead", type=int, default=45, choices=[30, 45, 60], help="--approach에서 접근 자세 = 시연에서 쥐기 시작 몇 프레임 전 자세 (30Hz). 클수록 물체에서 멀리 멈춤. 90은 시연마다 너무 달라 안 씀")
+    ap.add_argument("--part_ver", default=PART_VER, help="부품(stepS·M·L) 공용 정책 버전: k5/k10/k15 = 길이별 시연 5/10/15개로 학습")
+    ap.add_argument("--part_step", default=PART_STEP, help="부품 정책 스텝 (010000, 020000)")
+    ap.add_argument("--use_policy", choices=list(PLAN), help="교차 시험: 탐지된 물체와 상관없이 이 물체의 정책으로 집음 (새 물체·다른 물체 일반화 확인). 기록은 run_log_cross.csv")
+    ap.add_argument("--obj", help="--use_policy와 함께: 실제로 놓은 물체 이름 (기록의 class 칸). 예: tape2, screw")
     ap.add_argument("--head_shift", type=float, nargs=2, metavar=("DX", "DY"), help="head 화면을 옮겨 학습 때 구도에 맞춤 (check_head의 dx, dy 부호 반대로). 기록은 run_log_shift_<dx>_<dy>.csv")
     args = ap.parse_args()
+    PART_VER, PART_STEP = args.part_ver, args.part_step
+    args.steps_plan = tuple(args.n_action_steps)
+    args.n_action_steps = ">".join(map(str, args.steps_plan))  # 기록용 (예: 100>40). 한 개면 예전처럼 숫자 하나
     if args.head_shift:
         HEAD_SHIFT = args.head_shift
         LOG = LOG.with_name(f"run_log_shift_{args.head_shift[0]:g}_{args.head_shift[1]:g}.csv")  # 기준 측정과 섞이지 않게
@@ -511,6 +630,12 @@ def main():
         if args.collect:
             raise SystemExit("--knn과 --collect는 함께 못 씀")
         LOG = LOG.with_name("run_log_knn.csv")
+    if args.use_policy:
+        LOG = LOG.with_name("run_log_cross.csv")  # 측정 기록과 섞이지 않게
+    approach = {}
+    if args.approach:
+        LOG = LOG.with_name("run_log_approach.csv")
+        approach = json.loads(Path(f"configs/robot/approach_fit_lead{args.approach_lead}.json").read_text(encoding="utf-8"))
     if args.stats:
         print(f"{LOG}: {fmt(file_rates())}")
         if LOG.exists():
@@ -526,12 +651,13 @@ def main():
     policies = {}
     logging.disable(logging.WARNING)  # 체크포인트마다 "cuda 없음 → cpu" 경고 2줄씩 (무해)
     print(f"정책 불러오는 중: {', '.join(PLAN)}")
-    for name in PLAN:
-        path = ckpt_path(name, args.step, args.v3)
+    for name in ([args.use_policy] if args.use_policy else PLAN):
+        path = ckpt_path(name, args.step, args.ver)
         if args.knn:
             policies[name] = load_knn(name, args.knn_from)
         elif Path(path).exists():
-            policies[name] = load_policy(path, args.device, args.n_action_steps)
+            same = next((policies[o] for o in policies if ckpt_path(o, args.step, args.ver) == path), None)  # 부품 3종은 같은 정책
+            policies[name] = same or load_policy(path, args.device, args.steps_plan[0])
         else:
             print(f"[건너뜀] {name}: 체크포인트 없음 ({path})")
     logging.disable(logging.NOTSET)
@@ -563,14 +689,22 @@ def main():
                 log.writerow(LOG_COLS)
             session = []  # 이번 실행 기록 (class, y/n)
             while True:
-                found = detect_all(model, robot.get_observation()["head"], policies)
+                found = detect_all(model, robot.get_observation()["head"], set(model.names.values()) if args.use_policy else policies)
                 det = max(found, key=lambda d: d[1]) if found else None
+                if det is None and args.use_policy:  # 새 물체는 YOLO가 모를 수 있음 → 위치 없이 정책만 실행
+                    if input("탐지된 물체 없음. 물체를 놓고 Enter = 그래도 정책 실행 (위치 기록 없음), q = 종료: ").strip().lower() == "q":
+                        break
+                    det = ("none", 0.0, (0, 0, 0, 0))
                 if det is None:
                     cv2.imwrite("outputs/last_head.jpg", cv2.cvtColor(robot.get_observation()["head"], cv2.COLOR_RGB2BGR))
                     print("탐지된 물체 없음 → 종료. head 화면: outputs/last_head.jpg (책상이 안 보이면 카메라 번호 확인)")
                     break
                 name, conf, box = det
-                step = step_label(name, args.step, args.v3)
+                seen = name  # YOLO가 본 종류 (교차 시험이면 정책과 다를 수 있음)
+                if args.use_policy:
+                    name = args.use_policy
+                    print(f"[교차] 놓은 물체 {args.obj or '?'}, YOLO {seen} ({conf:.2f}) → {name} 정책으로 집기")
+                step = step_label(name, args.step, args.ver)
                 pan = PAN_OFFSET.get(name, 0.0) + (0.0 if args.no_pan_fit else args.pan_scale * pan_fix(name, step, box))
                 if args.pan_offset is not None:
                     pan = args.pan_offset
@@ -579,6 +713,14 @@ def main():
                     pan, reach = 0.0, 0.0
                 print(f"\n{name} ({conf:.2f}, x={(box[0] + box[2]) // 2}, y={(box[1] + box[3]) // 2}) → act_pick_{name} {step} 실행, "
                       f"pan 보정 {pan:+.1f}도, 거리 보정 {reach:+.0f}px. 스페이스=지금 놓기, q=이번 시도 중단")
+                pre = False
+                if approach and name in approach and any(box):
+                    from approach_map import predict as approach_pose
+                    target = {f"{j}.pos": v for j, v in approach_pose(approach[name], ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)).items()}
+                    target["gripper.pos"] = approach[name]["grip"]
+                    print("[접근] " + " ".join(f"{k.split('.')[0][:5]} {v:+.0f}" for k, v in target.items()) + " 으로 이동 후 ACT")
+                    approach_move(robot, target)
+                    pre = True
                 t0 = time.perf_counter()
                 GRASP_POSE.clear()
                 rec = [] if args.collect else None
@@ -590,7 +732,9 @@ def main():
                     k, hold = run_replay(robot, actions, features[ACTION]["names"], args.fps)
                 else:
                     k, hold = run_policy(robot, *policies[name], features, args.seconds, args.fps, args.smooth, pan,
-                                         extra=reach_fix(name, reach), rec=rec)
+                                         extra=reach_fix(name, reach), rec=rec, steps=args.steps_plan, idle_skip=not args.no_idle_skip, soft=args.soft_start,
+                                         mask=[b for _, _, b in found if b != box] if args.mask_others else None, preopened=pre,
+                                         empty=EMPTY_GRIP_BY.get(name, EMPTY_GRIP))
                 if args.collect and k in INTERVENE:
                     frames, grip = takeover(robot, teleop, features)
                     keep = bool(frames) and input("쥐고 들어 올렸나요? 저장하고 수거함으로 y / 버리기 n: ").strip().lower() == "y"
@@ -620,9 +764,12 @@ def main():
                     with PAN_LOG.open("a", encoding="utf-8") as pf:
                         pf.write(("time,class,step,x,y,pan_fix,end_pan,demo_pan,held\n" if new else "") +
                                  f"{datetime.now():%H:%M:%S},{name},{step},{cx:.0f},{by},{pan:.2f},{end:.2f},{want:.2f},{hold is not None}\n")
-                if hold is not None and not args.collect:
+                if hold is not None and LIFT_EXTRA.get(name):  # 고정 동작으로 확실히 들어 올림 (들 때 값이 줄어드는 방향)
+                    now = {k: v for k, v in robot.get_observation().items() if k.endswith(".pos")}
+                    move_to(robot, {**now, "shoulder_lift.pos": now["shoulder_lift.pos"] - LIFT_EXTRA[name], "gripper.pos": hold}, 1.0, ease=True)
+                if hold is not None and args.bin and not args.collect:
                     carry_and_drop(robot, PLAN[name], hold)
-                else:  # 못 쥠 / 스페이스 / q / 시간 초과 / 수집 중 → 그 자리에서 그리퍼 열고 home
+                else:  # 못 쥠 / 스페이스 / q / 시간 초과 / 수집 중 / 측정(--bin 없음) → 그 자리에서 그리퍼 열고 home
                     release_and_home(robot, PLAN[name])
                 ok = input("성공? (y/n, q=종료): ").strip().lower()
                 if ok in ("y", "n"):
@@ -631,7 +778,7 @@ def main():
                         r = input(f"실패 이유 번호 또는 직접 입력 ({REASONS_HELP}) [빗나감 = 그리퍼가 물체보다 로봇 기준 어느 쪽]: ").strip()
                         reason = "+".join(REASONS.get(p.strip(), p.strip()) for p in r.split(","))  # "2, 9"처럼 여러 개 가능
                     fix = "off" if abs(pan) < 1e-6 and abs(reach) < 1e-6 else "on"  # 실제로 더한 보정 기준
-                    row = [datetime.now().isoformat(timespec="seconds"), name, f"{conf:.2f}", f"{time.perf_counter() - t0:.1f}",
+                    row = [datetime.now().isoformat(timespec="seconds"), f"{args.obj or '?'}(YOLO:{seen})" if args.use_policy else name, f"{conf:.2f}", f"{time.perf_counter() - t0:.1f}",
                            ok, reason, step, fix, f"{pan:.2f}", f"{reach:.1f}", (box[0] + box[2]) // 2, (box[1] + box[3]) // 2,
                            *meta]
                     log.writerow(row)

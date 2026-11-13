@@ -27,7 +27,10 @@ from app.cleaner import BINS, OBJECTS, load_settings, SETTINGS_FILE  # noqa: E40
 LOG = Path("outputs/app_log.csv")  # 웹으로 돌린 시도 기록 (run_log.csv와 섞지 않음)
 FPS = {"normal": 15, "slow": 10}  # 속도 설정 → 정책 fps (15보다 빠르면 팔이 못 따라감)
 SECONDS = 30  # 정책 최대 시간 (보통 속도 기준, 느리게면 비례해서 늘림)
-N_ACTION_STEPS = 40  # 예측한 동작 중 실행할 개수. run_auto 측정과 같은 값 (물체를 약 2.7초마다 다시 봄)
+STEPS = (60, 30, 20)  # 예측마다 실행할 동작 수 (run_auto 기본과 같음): 첫 예측을 길게 해 출발 움찔거림 없앰, 쥐기 가까이 갈수록 자주 다시 봄
+PICK_ORDER = ["bottle", "tape", "eraser", "pen", "paper"]  # 집는 순서 기본값: 키 큰 것부터 (5종을 같이 두면 다른 물체를 집으러 가다 물병에 걸림, 11/13). 설정 "order"로 바꿈
+# 다른 물체 가리기: 설정 "mask_others" (기본 켬). 시연은 물체 하나씩이라 여러 개 보이면 정책이 흔들림 (11/13)
+SOFT_START = 1.0  # 처음 1초는 천천히 출발 (시연 첫 동작이 빨라 사람 옆에서 위협적, 11/13)
 SAME_SPOT_PX = 50  # 놓은 뒤 같은 물건이 원래 자리 이만큼 안에 보이면 실패. ponytail: 같은 종류 물건이 근처에 또 있으면 오판
 
 
@@ -44,9 +47,10 @@ class RealCleaner:
     def __init__(self, robot=None, step=None):
         self.settings = load_settings()
         self.step = step = step or self.settings.get("step", "010000")
+        self.ver = ver = self.settings.get("ver", "v3")  # app_settings.json의 "ver" (run_auto --ver와 같은 값). v3 = 지우개·종이 v3, 나머지 v2
         logging.disable(logging.WARNING)  # 체크포인트마다 cuda 경고
-        self.policies = {o: ra.load_policy(ra.ckpt_path(o, step, True), "cpu", N_ACTION_STEPS)  # 지우개·종이는 v3, 나머지는 v2
-                         for o in ra.PLAN if Path(ra.ckpt_path(o, step, True)).exists()}
+        self.policies = {o: ra.load_policy(ra.ckpt_path(o, step, ver), "cpu", STEPS[0])
+                         for o in ra.PLAN if o in BINS and Path(ra.ckpt_path(o, step, ver)).exists()}  # 화면에 이름·수거함이 정해진 물체만 (부품은 UI 반영 후)
         logging.disable(logging.NOTSET)
         self.robot = robot or make_robot_from_config(
             draccus.decode(RobotConfig, yaml.safe_load(ra.CFG.read_text(encoding="utf-8"))["robot"]))
@@ -58,7 +62,7 @@ class RealCleaner:
         self.boxes = []  # head 화면에 그릴 박스 [(이름, 신뢰도, xyxy, 지금 집는 것인지)]
         self.st = {"state": "idle", "step": None, "current": None, "message": "대기 중이에요",
                    "detected": [], "progress": {"done": 0, "failed": 0, "remaining": 0}, "notifications": []}
-        missing = [o for o in ra.PLAN if o not in self.policies]
+        missing = [o for o in ra.PLAN if o in BINS and o not in self.policies]
         self.robot.connect()  # 대기 중에도 실시간 화면이 나오게 바로 연결 (토크 켜짐 → 지금 자세 유지)
         if missing:
             self._notify(f"학습된 동작이 없어 정리하지 않는 물건: {', '.join(OBJECTS[o] for o in missing)}", "warn")
@@ -196,7 +200,8 @@ class RealCleaner:
             self._set(progress={"done": done, "failed": failed, "remaining": len(todo)})
             if not todo:
                 break
-            name, conf, box = max(todo, key=lambda d: d[1])
+            order = s.get("order", PICK_ORDER)  # 앞에 있는 종류부터. 같은 종류끼리는 신뢰도 높은 것부터
+            name, conf, box = min(todo, key=lambda d: (order.index(d[0]) if d[0] in order else len(order), -d[1]))
             self.boxes = [(n, c, b, (n, b) == (name, box)) for n, c, b, _ in self.boxes]
             ok, reason = False, ""
             for attempt in range(1 + s.get("max_retries", 1)):
@@ -204,8 +209,10 @@ class RealCleaner:
                           message=f"{OBJECTS[name]} 집는 중 ({attempt + 1}번째)")
                 t0 = time.perf_counter()
                 key, hold = ra.run_policy(self.robot, *self.policies[name], self.features, seconds, fps, 0.3,
-                                          ra.PAN_OFFSET.get(name, 0.0) + (s.get("pan_scale", 1.0) * ra.pan_fix(name, ra.step_label(name, self.step, True), box) if s.get("pan_fit", True) else 0.0),
-                                          extra=ra.reach_fix(name, ra.reach_px(name, ra.step_label(name, self.step, True), box)), poll_key=lambda: "q" if self.cmd == "stop" else None)
+                                          ra.PAN_OFFSET.get(name, 0.0) + (s.get("pan_scale", 1.0) * ra.pan_fix(name, ra.step_label(name, self.step, self.ver), box) if s.get("pan_fit", True) else 0.0),
+                                          extra=ra.reach_fix(name, ra.reach_px(name, ra.step_label(name, self.step, self.ver), box)), poll_key=lambda: "q" if self.cmd == "stop" else None,
+                                          steps=STEPS, soft=SOFT_START,
+                                          mask=[b for _, _, b in todo if b != box] if s.get("mask_others", True) else None)
                 if ra.ESTOP.is_set():
                     return
                 if hold is not None:

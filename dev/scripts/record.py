@@ -100,6 +100,8 @@ def log_say(text, *args, **kwargs):
       연결도 끊음 → 그동안 그리퍼가 쥔 채로 멈춰 과부하(6번 모터 응답 없음)로 재연결 실패하던 문제"""
     if text.startswith(("Recording episode", "Reset the environment")) and _events:
         _events[-1]["exit_early"] = False
+    if text.startswith("Recording episode") and _events:  # 저장 중에 누른 ←가 남으면 다음 에피소드를 통째로 버림 (11/13 확인)
+        _events[-1]["rerecord_episode"] = False
     if _live and text.startswith("Recording episode"):
         _live.mark_next = True
     if _live and text == "Re-record episode":
